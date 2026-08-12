@@ -1,0 +1,63 @@
+{
+    "name": "qzone-sdk",
+    "version": "0.1.0",
+    "description": "A framework-agnostic TypeScript SDK for Qzone.",
+    "keywords": [
+        "qq",
+        "qzone",
+        "sdk",
+        "typescript"
+    ],
+    "homepage": "https://github.com/Procyon-Nan/qzone-sdk#readme",
+    "bugs": {
+        "url": "https://github.com/Procyon-Nan/qzone-sdk/issues"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/Procyon-Nan/qzone-sdk.git"
+    },
+    "license": "MIT",
+    "author": "ProcyonNAN <3189960265@qq.com>",
+    "type": "module",
+    "main": "./dist/index.cjs",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js",
+            "require": "./dist/index.cjs"
+        },
+        "./package.json": "./package.json"
+    },
+    "files": [
+        "dist",
+        "LICENSE",
+        "README.md"
+    ],
+    "sideEffects": false,
+    "engines": {
+        "node": "^20.19.0 || >=22.12.0"
+    },
+    "packageManager": "yarn@1.22.22",
+    "scripts": {
+        "build": "tsup",
+        "dev": "tsup --watch",
+        "format": "prettier --write .",
+        "format:check": "prettier --check .",
+        "lint": "eslint .",
+        "test": "vitest run --passWithNoTests",
+        "typecheck": "tsc --noEmit",
+        "prepublishOnly": "yarn typecheck && yarn build"
+    },
+    "devDependencies": {
+        "@eslint/js": "^10.0.1",
+        "eslint": "^10.8.1",
+        "globals": "^17.10.0",
+        "prettier": "^3.9.6",
+        "tsup": "^8.5.1",
+        "typescript": "^5.9.3",
+        "typescript-eslint": "^8.67.0",
+        "vitest": "^3.2.4"
+    }
+}
