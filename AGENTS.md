@@ -29,6 +29,15 @@ qzone-sdk/
 │   └── workflows/
 │       └── ci.yml          # 持续集成：格式、静态检查、测试与构建
 ├── src/
+│   ├── transport/
+│   │   ├── abort.ts        # 请求超时、取消与可中断退避
+│   │   ├── fetch-transport.ts # Fetch 请求、重试、状态与错误编排
+│   │   ├── redirect.ts     # QQ 域重定向解析与安全策略
+│   │   ├── request.ts      # URL、Header、Query 与 Form 构造
+│   │   ├── response.ts     # JSON、JSONP 与响应诊断解析
+│   │   ├── set-cookie.ts   # Set-Cookie 提取与过期识别
+│   │   ├── types.ts        # 内部端点和请求响应类型
+│   │   └── url-policy.ts   # QQ URL 与 HTTP 主机安全策略
 │   ├── session/
 │   │   ├── cookies.ts      # Cookie 解析、别名规范化与账号识别
 │   │   ├── gtk.ts          # hash33 与 g_tk 计算
@@ -38,6 +47,8 @@ qzone-sdk/
 │   ├── index.ts            # SDK 公共导出入口
 │   └── types.ts            # SDK 公共模型、操作参数与结果类型
 ├── tests/
+│   ├── transport/
+│   │   └── response.spec.ts # JSON、JSONP 与错误响应测试
 │   ├── session/
 │   │   ├── cookies.spec.ts # Cookie 解析与账号识别测试
 │   │   └── gtk.spec.ts     # hash33 与 g_tk 固定向量测试
@@ -47,6 +58,7 @@ qzone-sdk/
 │   │   └── fixtures.ts     # 测试响应构造工具
 │   ├── errors.spec.ts      # 公共错误体系测试
 │   ├── session.spec.ts     # Session 状态与公共客户端测试
+│   ├── transport.spec.ts   # Fetch Transport 请求与故障语义测试
 │   └── types.spec.ts       # 公共类型契约测试
 ├── .editorconfig           # 编辑器通用格式与 LF 换行约束
 ├── .gitattributes          # Git 文本文件 LF 换行约束

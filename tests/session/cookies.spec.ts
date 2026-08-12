@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { QzoneValidationError } from '../../src/index.js'
 import {
+    mergeCookies,
     parseAccountId,
     parseCookies,
     serializeCookies
@@ -89,5 +90,16 @@ describe('Cookie parsing', () => {
         expect(
             serializeCookies(parseCookies('uin=o10001; p_skey=secret'))
         ).toBe('uin=o10001; p_skey=secret; p_uin=o10001')
+    })
+
+    it('replaces and removes canonical Cookie aliases together', () => {
+        const cookies = parseCookies('uin=o10001; pskey=old')
+
+        expect(
+            mergeCookies(cookies, new Map([['p_skey', 'new']])).get('p_skey')
+        ).toBe('new')
+        expect(
+            mergeCookies(cookies, new Map([['p_skey', null]])).has('pskey')
+        ).toBe(false)
     })
 })

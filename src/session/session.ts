@@ -10,7 +10,12 @@ import type {
     SessionChangeHandler,
     SessionInfo
 } from '../types.js'
-import { parseAccountId, parseCookies, serializeCookies } from './cookies.js'
+import {
+    mergeCookies,
+    parseAccountId,
+    parseCookies,
+    serializeCookies
+} from './cookies.js'
 import { computeGtk } from './gtk.js'
 
 export interface SessionStateOptions {
@@ -99,6 +104,28 @@ export class SessionState {
 
         this.#tokens.set(normalizedAccountId, normalizedToken)
         this.#touch()
+        await this.#notifyChange()
+    }
+
+    async mergeCookieUpdates(
+        updates: ReadonlyMap<string, string | null>
+    ): Promise<void> {
+        this.#assertOpen()
+        if (!this.#accountId || !this.#updatedAt || updates.size === 0) {
+            return
+        }
+
+        const session = normalizeSessionInput(
+            {
+                accountId: this.#boundAccountId,
+                cookies: Object.fromEntries(
+                    mergeCookies(this.#cookies, updates)
+                ),
+                tokens: Object.fromEntries(this.#tokens)
+            },
+            this.#now
+        )
+        this.#apply(session)
         await this.#notifyChange()
     }
 

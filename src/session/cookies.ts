@@ -68,6 +68,27 @@ export function serializeCookies(cookies: ReadonlyMap<string, string>): string {
     return [...cookies].map(([key, value]) => `${key}=${value}`).join('; ')
 }
 
+export function mergeCookies(
+    cookies: ReadonlyMap<string, string>,
+    updates: ReadonlyMap<string, string | null>
+): Map<string, string> {
+    const merged = new Map(cookies)
+
+    for (const [key, value] of updates) {
+        const canonical = canonicalCookieKey(key)
+        for (const existingKey of merged.keys()) {
+            if (canonicalCookieKey(existingKey) === canonical) {
+                merged.delete(existingKey)
+            }
+        }
+        if (value !== null) {
+            merged.set(key, value)
+        }
+    }
+
+    return normalizeCookies(merged)
+}
+
 function parseCookieJson(text: string): Map<string, string> {
     let value: unknown
     try {
@@ -103,7 +124,7 @@ function normalizeCookies(
     }
 
     for (const [key, value] of cookies) {
-        const canonical = COOKIE_ALIASES[key.toLowerCase().replaceAll('-', '_')]
+        const canonical = canonicalCookieKey(key)
         if (canonical && !cookies.has(canonical)) {
             cookies.set(canonical, value)
         }
@@ -118,6 +139,11 @@ function normalizeCookies(
     }
 
     return cookies
+}
+
+function canonicalCookieKey(key: string): string {
+    const normalized = key.toLowerCase().replaceAll('-', '_')
+    return COOKIE_ALIASES[normalized] ?? key
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
