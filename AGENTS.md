@@ -29,7 +29,16 @@ qzone-sdk/
 │   └── workflows/
 │       └── ci.yml          # 持续集成：格式、静态检查、测试与构建
 ├── src/
-│   └── index.ts            # SDK 公共导出入口
+│   ├── errors.ts           # SDK 公共错误类型与稳定错误码
+│   ├── index.ts            # SDK 公共导出入口
+│   └── types.ts            # SDK 公共模型、操作参数与结果类型
+├── tests/
+│   ├── support/
+│   │   ├── fake-fetch.spec.ts # Fetch 测试工具回归测试
+│   │   ├── fake-fetch.ts   # 可注入、可记录的顺序 Fetch 测试工具
+│   │   └── fixtures.ts     # 测试响应构造工具
+│   ├── errors.spec.ts      # 公共错误体系测试
+│   └── types.spec.ts       # 公共类型契约测试
 ├── .editorconfig           # 编辑器通用格式与 LF 换行约束
 ├── .gitattributes          # Git 文本文件 LF 换行约束
 ├── .gitignore              # Git 忽略规则
