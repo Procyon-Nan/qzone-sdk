@@ -29,15 +29,24 @@ qzone-sdk/
 │   └── workflows/
 │       └── ci.yml          # 持续集成：格式、静态检查、测试与构建
 ├── src/
+│   ├── session/
+│   │   ├── cookies.ts      # Cookie 解析、别名规范化与账号识别
+│   │   ├── gtk.ts          # hash33 与 g_tk 计算
+│   │   └── session.ts      # Session 状态、快照与持久化通知
+│   ├── client.ts           # SDK 公共客户端门面
 │   ├── errors.ts           # SDK 公共错误类型与稳定错误码
 │   ├── index.ts            # SDK 公共导出入口
 │   └── types.ts            # SDK 公共模型、操作参数与结果类型
 ├── tests/
+│   ├── session/
+│   │   ├── cookies.spec.ts # Cookie 解析与账号识别测试
+│   │   └── gtk.spec.ts     # hash33 与 g_tk 固定向量测试
 │   ├── support/
 │   │   ├── fake-fetch.spec.ts # Fetch 测试工具回归测试
 │   │   ├── fake-fetch.ts   # 可注入、可记录的顺序 Fetch 测试工具
 │   │   └── fixtures.ts     # 测试响应构造工具
 │   ├── errors.spec.ts      # 公共错误体系测试
+│   ├── session.spec.ts     # Session 状态与公共客户端测试
 │   └── types.spec.ts       # 公共类型契约测试
 ├── .editorconfig           # 编辑器通用格式与 LF 换行约束
 ├── .gitattributes          # Git 文本文件 LF 换行约束

@@ -1,3 +1,4 @@
+export { QzoneClient } from './client.js'
 export {
     QzoneAuthError,
     QzoneCancelledError,
