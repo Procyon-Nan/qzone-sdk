@@ -25,10 +25,27 @@ export class PostOperations {
     }
 
     async getPost(options: GetPostOptions): Promise<QzonePost> {
-        const target = normalizePostTarget(options.post)
-        const base =
-            this.#cache.get(target.authorId, target.id) ??
-            protocolPostFromTarget(options.post, target)
+        return toPublicPost(
+            await this.resolvePost(options.post, options.signal, true)
+        )
+    }
+
+    getCachedPost(post: PostTarget): ProtocolPost | undefined {
+        const target = normalizePostTarget(post)
+        return this.#cache.get(target.authorId, target.id)
+    }
+
+    async resolvePost(
+        post: PostTarget,
+        signal?: AbortSignal,
+        refresh = false
+    ): Promise<ProtocolPost> {
+        const target = normalizePostTarget(post)
+        const cached = this.#cache.get(target.authorId, target.id)
+        if (cached && !refresh) {
+            return cached
+        }
+        const base = cached ?? protocolPostFromTarget(post, target)
         let record
 
         if (base.action.appId === 311) {
@@ -36,22 +53,27 @@ export class PostOperations {
                 const detail = await this.#read.legacyDetail(
                     target.authorId,
                     target.id,
-                    options.signal
+                    signal
                 )
                 record = requirePostDetail(detail, target)
             } catch (error) {
                 if (!shouldFallbackRead(error)) {
                     throw error
                 }
-                record = await this.#h5Detail(base, target, options.signal)
+                record = await this.#h5Detail(base, target, signal)
             }
         } else {
-            record = await this.#h5Detail(base, target, options.signal)
+            record = await this.#h5Detail(base, target, signal)
         }
 
         const merged = mergeProtocolPost(base, record)
         this.#cache.set(merged)
-        return toPublicPost(merged)
+        return merged
+    }
+
+    deleteCachedPost(post: PostTarget): void {
+        const target = normalizePostTarget(post)
+        this.#cache.delete(target.authorId, target.id)
     }
 
     async #h5Detail(

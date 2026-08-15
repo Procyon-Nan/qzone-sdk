@@ -93,6 +93,60 @@ export function publishPostEndpoint(accountId: QzoneId): TransportEndpoint {
     )
 }
 
+export function commentEndpoint(
+    authorId: QzoneId,
+    postId: QzoneId,
+    reply = false
+): TransportEndpoint {
+    return writeEndpoint(
+        reply ? 'comment.reply' : 'comment.create',
+        reply
+            ? 'https://h5.qzone.qq.com/proxy/domain/taotao.qzone.qq.com/cgi-bin/emotion_cgi_re_feeds'
+            : 'https://user.qzone.qq.com/proxy/domain/taotao.qzone.qq.com/cgi-bin/emotion_cgi_re_feeds',
+        authorId,
+        postId
+    )
+}
+
+export function deletePostEndpoint(
+    accountId: QzoneId,
+    postId: QzoneId
+): TransportEndpoint {
+    return writeEndpoint(
+        'post.delete',
+        'https://h5.qzone.qq.com/proxy/domain/taotao.qzone.qq.com/cgi-bin/emotion_cgi_delete_v6',
+        accountId,
+        postId
+    )
+}
+
+export function likePostEndpoints(
+    authorId: QzoneId,
+    postId: QzoneId,
+    liked: boolean
+): readonly TransportEndpoint[] {
+    const action = liked ? 'like' : 'unlike'
+    const path = liked ? 'internal_dolike_app' : 'internal_unlike_app'
+    return Object.freeze([
+        writeEndpoint(
+            `post.${action}.proxy`,
+            `https://user.qzone.qq.com/proxy/domain/w.qzone.qq.com/cgi-bin/likes/${path}`,
+            authorId,
+            postId,
+            'qq-write-accepted',
+            '/cgi-bin/likes/internal_'
+        ),
+        writeEndpoint(
+            `post.${action}.direct`,
+            `https://w.qzone.qq.com/cgi-bin/likes/${path}`,
+            authorId,
+            postId,
+            'qq-write-accepted',
+            '/cgi-bin/likes/internal_'
+        )
+    ])
+}
+
 function readEndpoint(
     id: string,
     url: string,
@@ -127,7 +181,10 @@ function tokenEndpoint(
 function writeEndpoint(
     id: string,
     url: string,
-    accountId: QzoneId
+    refererAccountId: QzoneId,
+    postId?: QzoneId,
+    redirect: TransportEndpoint['redirect'] = 'none',
+    redirectFollowPath?: string
 ): TransportEndpoint {
     return Object.freeze({
         id,
@@ -136,8 +193,11 @@ function writeEndpoint(
         operation: 'write',
         authentication: 'required',
         includeGtk: true,
-        referer: `https://user.qzone.qq.com/${accountId}`,
+        referer: postId
+            ? `https://user.qzone.qq.com/${refererAccountId}/mood/${postId}`
+            : `https://user.qzone.qq.com/${refererAccountId}`,
         origin: 'https://user.qzone.qq.com',
-        redirect: 'none'
+        redirect,
+        ...(redirectFollowPath ? { redirectFollowPath } : {})
     })
 }

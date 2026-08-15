@@ -1,4 +1,5 @@
 import { FeedOperations } from './operations/feed.js'
+import { MutationOperations } from './operations/mutation.js'
 import { PostCache } from './operations/post-cache.js'
 import { PostOperations } from './operations/post.js'
 import { PublishOperations } from './operations/publish.js'
@@ -7,16 +8,23 @@ import { QzoneWriteApi } from './operations/write.js'
 import { SessionState } from './session/session.js'
 import { FetchTransport } from './transport/fetch-transport.js'
 import type {
+    CommentMutationResult,
+    CommentOptions,
+    DeleteOwnPostOptions,
     FeedPage,
     GetPostOptions,
+    LikeMutationResult,
+    LikeOptions,
     ListFeedsOptions,
     PostMutationResult,
     PublishPostOptions,
     QzoneClientOptions,
     QzonePost,
+    ReplyOptions,
     QzoneSession,
     QzoneSessionInput,
-    SessionInfo
+    SessionInfo,
+    UnlikeOptions
 } from './types.js'
 
 export class QzoneClient {
@@ -25,6 +33,7 @@ export class QzoneClient {
     readonly #posts: PostOperations
     readonly #postCache: PostCache
     readonly #publish: PublishOperations
+    readonly #mutations: MutationOperations
 
     constructor(options: QzoneClientOptions) {
         this.#session = new SessionState(options.session, {
@@ -47,6 +56,12 @@ export class QzoneClient {
             this.#feeds,
             this.#posts
         )
+        this.#mutations = new MutationOperations(
+            this.#session,
+            write,
+            this.#posts,
+            this.#feeds
+        )
     }
 
     listFeeds(options: ListFeedsOptions): Promise<FeedPage> {
@@ -59,6 +74,26 @@ export class QzoneClient {
 
     publishPost(options: PublishPostOptions): Promise<PostMutationResult> {
         return this.#publish.publishPost(options)
+    }
+
+    comment(options: CommentOptions): Promise<CommentMutationResult> {
+        return this.#mutations.comment(options)
+    }
+
+    reply(options: ReplyOptions): Promise<CommentMutationResult> {
+        return this.#mutations.reply(options)
+    }
+
+    like(options: LikeOptions): Promise<LikeMutationResult> {
+        return this.#mutations.like(options)
+    }
+
+    unlike(options: UnlikeOptions): Promise<LikeMutationResult> {
+        return this.#mutations.unlike(options)
+    }
+
+    deleteOwnPost(options: DeleteOwnPostOptions): Promise<PostMutationResult> {
+        return this.#mutations.deleteOwnPost(options)
     }
 
     getSessionInfo(): SessionInfo {

@@ -4,10 +4,17 @@ import {
     QzoneValidationError
 } from '../errors.js'
 import {
+    commentEndpoint,
+    deletePostEndpoint,
     imageUploadEndpoint,
+    likePostEndpoints,
     publishPostEndpoint
 } from '../protocol/endpoints.js'
 import type { PreparedPublishImage } from '../protocol/image.js'
+import {
+    parseMutationReceipt,
+    type MutationReceipt
+} from '../protocol/mutation.js'
 import {
     parsePublishReceipt,
     parseUploadedPhoto,
@@ -15,10 +22,14 @@ import {
     type UploadedPhoto
 } from '../protocol/publish.js'
 import type { SessionState } from '../session/session.js'
+import type { CommentReference } from '../types.js'
 import {
     FetchTransport,
     UncertainTransportError
 } from '../transport/fetch-transport.js'
+import { parseResponseData } from '../transport/response.js'
+import type { TransportEndpoint } from '../transport/types.js'
+import type { ProtocolPost } from '../protocol/types.js'
 
 export class QzoneWriteApi {
     readonly #session: SessionState
@@ -136,6 +147,142 @@ export class QzoneWriteApi {
         }
     }
 
+    async comment(
+        post: ProtocolPost,
+        content: string,
+        replyTo?: CommentReference,
+        signal?: AbortSignal
+    ): Promise<MutationReceipt> {
+        const accountId = this.#requireAccountId()
+        const referer = postReferer(post)
+        return this.#requestMutation(
+            commentEndpoint(post.authorId, post.id, Boolean(replyTo)),
+            {
+                topicId: `${post.authorId}_${post.id}__1`,
+                uin: accountId,
+                hostUin: post.authorId,
+                feedsType: 100,
+                inCharset: 'utf-8',
+                outCharset: 'utf-8',
+                plat: 'qzone',
+                source: 'ic',
+                platformid: 50,
+                format: 'fs',
+                ref: 'feeds',
+                content,
+                private: 0,
+                paramstr: 1,
+                isSignIn: 0,
+                richval: '',
+                richtype: '',
+                appid: post.action.appId,
+                busi_param: JSON.stringify(post.action.businessParameters),
+                qzreferrer: referer,
+                ...(replyTo
+                    ? {
+                          commentId: replyTo.id,
+                          commentUin: replyTo.authorId
+                      }
+                    : {})
+            },
+            signal
+        )
+    }
+
+    async setLike(
+        post: ProtocolPost,
+        liked: boolean,
+        signal?: AbortSignal
+    ): Promise<MutationReceipt> {
+        const accountId = this.#requireAccountId()
+        const form = {
+            unikey: post.action.unlikeKey,
+            curkey: post.action.currentLikeKey,
+            appid: post.action.appId,
+            opuin: accountId,
+            uin: accountId,
+            hostuin: post.authorId,
+            fid: post.id,
+            from: 1,
+            typeid: 0,
+            abstime: post.createdAt
+                ? Math.floor(Date.parse(post.createdAt) / 1_000)
+                : 0,
+            active: 0,
+            fupdate: 1,
+            opr_type: liked ? 'like' : 'unlike',
+            format: 'purejson',
+            qzreferrer: postReferer(post)
+        }
+        const endpoints = likePostEndpoints(post.authorId, post.id, liked)
+        try {
+            return await this.#requestMutation(endpoints[0]!, form, signal)
+        } catch (error) {
+            if (!isDefinitelyUnavailable(error)) {
+                throw error
+            }
+            return this.#requestMutation(endpoints[1]!, form, signal)
+        }
+    }
+
+    async deletePost(
+        post: ProtocolPost,
+        createdAt: number,
+        signal?: AbortSignal
+    ): Promise<MutationReceipt> {
+        const accountId = this.#requireAccountId()
+        return this.#requestMutation(
+            deletePostEndpoint(accountId, post.id),
+            {
+                uin: accountId,
+                topicId: `${accountId}_${post.id}__1`,
+                feedsType: 0,
+                feedsFlag: 0,
+                feedsKey: post.id,
+                feedsAppid: post.action.appId,
+                feedsTime: createdAt,
+                fupdate: 1,
+                ref: 'feeds',
+                format: 'json',
+                qzreferrer: `https://user.qzone.qq.com/${accountId}`
+            },
+            signal
+        )
+    }
+
+    async #requestMutation(
+        endpoint: TransportEndpoint,
+        form: NonNullable<Parameters<FetchTransport['request']>[1]>['form'],
+        signal?: AbortSignal
+    ): Promise<MutationReceipt> {
+        try {
+            const response = await this.#transport.request(endpoint, {
+                form,
+                signal
+            })
+            if (response.status >= 300 && response.status < 400) {
+                return Object.freeze({ id: null })
+            }
+            return parseMutationReceipt(
+                parseResponseData(response.text, endpoint.id),
+                endpoint.id
+            )
+        } catch (error) {
+            if (
+                error instanceof UncertainTransportError ||
+                error instanceof QzoneParseError ||
+                (error instanceof QzoneRequestError &&
+                    isUncertainStatus(error.context?.statusCode ?? 0))
+            ) {
+                throw new UncertainTransportError('写操作结果无法确认', {
+                    cause: error,
+                    context: { endpoint: endpoint.id }
+                })
+            }
+            throw error
+        }
+    }
+
     #requireAccountId(): string {
         const accountId = this.#session.accountId
         if (!accountId) {
@@ -143,6 +290,21 @@ export class QzoneWriteApi {
         }
         return accountId
     }
+}
+
+function postReferer(post: ProtocolPost): string {
+    return `https://user.qzone.qq.com/${post.authorId}/mood/${post.id}`
+}
+
+function isDefinitelyUnavailable(error: unknown): boolean {
+    return (
+        error instanceof QzoneRequestError &&
+        [404, 405].includes(error.context?.statusCode ?? 0)
+    )
+}
+
+function isUncertainStatus(status: number): boolean {
+    return (status >= 300 && status < 400) || status >= 500
 }
 
 function bytesToBase64(data: Uint8Array): string {

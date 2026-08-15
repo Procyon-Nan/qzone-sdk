@@ -107,6 +107,44 @@ const result = await client.publishPost({
 `accepted` 表示服务端明确接受但尚未读回，`unknown` 表示请求发送后无法确认
 是否成功。调用方不得把 `unknown` 当作失败后直接重试，否则可能产生重复动态。
 
+## 评论、点赞与删除
+
+评论、回复、点赞、取消点赞和删除均接收 SDK 返回的动态对象或
+`{ id, authorId }` 引用。QQ 空间内部的 `appid`、`curkey`、`unikey` 和
+`busi_param` 由同一客户端实例的缓存及详情读取负责补全，不会暴露给调用方：
+
+```ts
+const comment = await client.comment({
+    post,
+    content: '写得很好'
+})
+
+if (comment.comment) {
+    await client.reply({
+        post,
+        comment: comment.comment,
+        content: '谢谢'
+    })
+}
+
+await client.like({ post })
+await client.unlike({ post })
+```
+
+互动内容不能为空，最终写请求不会自动重试。点赞前会读取当前状态；若已经是
+目标状态，返回 `already-applied`。写入后 SDK 会进行有限次数的只读验证，
+显示同步尚未完成时返回 `accepted`，请求发送后无法确认时返回 `unknown`。
+
+`deleteOwnPost()` 只允许删除当前 Session 账号发布的动态。SDK 必须先从可信
+缓存或详情读取确认归属和真实创建时间；任一信息无法确认都会在删除请求发出
+前拒绝操作。删除后的 `verified` 表示详情端点已明确返回目标不存在：
+
+```ts
+await client.deleteOwnPost({ post })
+```
+
+对于任何 `unknown` 结果，调用方都应先重新读取状态，不得直接重复写入。
+
 ## 许可证
 
 [MIT](./LICENSE)

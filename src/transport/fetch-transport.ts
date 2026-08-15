@@ -194,13 +194,26 @@ export class FetchTransport {
                     context: statusContext(endpoint.id, result.status)
                 })
             }
-            if (isHomeRedirect(target, this.#session.accountId)) {
+            const acceptedWriteRedirect =
+                endpoint.redirect === 'qq-write-accepted' &&
+                isAllowedRedirect(url, target, redirects)
+            if (
+                isHomeRedirect(target, this.#session.accountId) &&
+                !acceptedWriteRedirect
+            ) {
                 throw new QzoneRequestError('QQ 空间接口跳转到异常主页', {
                     context: statusContext(endpoint.id, result.status)
                 })
             }
             if (
-                endpoint.redirect !== 'qq' ||
+                acceptedWriteRedirect &&
+                (!endpoint.redirectFollowPath ||
+                    !target.pathname.startsWith(endpoint.redirectFollowPath))
+            ) {
+                return result
+            }
+            if (
+                endpoint.redirect === 'none' ||
                 !isAllowedRedirect(url, target, redirects)
             ) {
                 throw new QzoneRequestError('QQ 空间接口返回不允许的重定向', {

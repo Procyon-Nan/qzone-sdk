@@ -150,6 +150,7 @@ export interface PostMutationResult extends MutationResultBase {
 
 export interface CommentMutationResult extends MutationResultBase {
     readonly comment?: QzoneComment
+    readonly reference?: CommentReference
 }
 
 export interface LikeMutationResult extends MutationResultBase {

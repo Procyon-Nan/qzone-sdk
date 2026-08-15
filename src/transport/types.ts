@@ -2,7 +2,7 @@ import type { QzoneId } from '../types.js'
 
 export type TransportMethod = 'GET' | 'POST'
 export type TransportOperation = 'read' | 'write'
-export type TransportRedirectPolicy = 'none' | 'qq'
+export type TransportRedirectPolicy = 'none' | 'qq' | 'qq-write-accepted'
 
 export interface TransportEndpoint {
     readonly id: string
@@ -15,6 +15,7 @@ export interface TransportEndpoint {
     readonly referer?: string
     readonly origin?: string
     readonly redirect?: TransportRedirectPolicy
+    readonly redirectFollowPath?: string
 }
 
 export type TransportParameter = string | number | boolean | null | undefined

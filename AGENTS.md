@@ -34,19 +34,23 @@ qzone-sdk/
 │   │   └── literal.ts      # 非严格 JavaScript 字面量的受控解析
 │   ├── operations/
 │   │   ├── feed.ts         # 三类 Feed、分页、回退与去重编排
+│   │   ├── mutation.ts     # 评论、点赞、删除与结果验证编排
 │   │   ├── post-cache.ts   # 内部协议动态的有界引用缓存
 │   │   ├── post.ts         # 动态详情、回退与列表字段补全
 │   │   ├── publish.ts      # 图片上传并发、发布与结果验证编排
 │   │   ├── read.ts         # QQ 空间只读端点请求与响应校验
-│   │   └── write.ts        # 图片上传和动态发布协议请求
+│   │   ├── references.ts   # 写操作目标的缓存、详情与列表补全
+│   │   ├── verification.ts # 社交写操作的有限只读验证
+│   │   └── write.ts        # 发布、评论、点赞和删除协议请求
 │   ├── protocol/
 │   │   ├── comment.ts      # 评论与嵌套回复归一化
-│   │   ├── endpoints.ts    # Feed、详情与发布端点描述
+│   │   ├── endpoints.ts    # Feed、详情与读写端点描述
 │   │   ├── feed.ts         # Feed 容器、列表和分页元数据解析
 │   │   ├── html.ts         # HTML 文本、属性和脚本安全提取
 │   │   ├── image.ts        # 发布图片复制、签名与尺寸校验
 │   │   ├── media-url.ts    # 媒体 URL、类型和图片身份辅助
 │   │   ├── media.ts        # 图片、视频、音频和文件归一化
+│   │   ├── mutation.ts     # 社交写操作响应归一化
 │   │   ├── page.ts         # index/profile HTML Feed 与 Token 提取
 │   │   ├── payload.ts      # QQ 响应状态和 data 容器辅助
 │   │   ├── post-fields.ts  # 动态标识、作者和正文字段提取
@@ -78,6 +82,7 @@ qzone-sdk/
 │   │   └── cursor.spec.ts  # 游标实例及请求上下文隔离测试
 │   ├── operations/
 │   │   ├── feed.spec.ts    # 三类 Feed、回退、分页与详情集成测试
+│   │   ├── mutation.spec.ts # 评论、点赞、删除和故障语义测试
 │   │   └── publish.spec.ts # 上传、发布、验证及不确定结果测试
 │   ├── protocol/
 │   │   ├── comment.spec.ts # 评论与嵌套回复解析测试
@@ -85,6 +90,7 @@ qzone-sdk/
 │   │   ├── html.spec.ts    # HTML 与 qzonetoken 解析测试
 │   │   ├── image.spec.ts   # 发布图片签名、尺寸与复制测试
 │   │   ├── media.spec.ts   # 媒体识别、去重与归属测试
+│   │   ├── mutation.spec.ts # 社交写操作响应解析测试
 │   │   ├── page.spec.ts    # index/profile 页面字面量解析测试
 │   │   └── time.spec.ts    # 时间字段和范围测试
 │   ├── transport/

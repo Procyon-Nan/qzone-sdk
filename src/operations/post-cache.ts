@@ -36,6 +36,15 @@ export class PostCache {
         }
     }
 
+    delete(authorId: QzoneId, postId: QzoneId): void {
+        const reference = referenceKey(authorId, postId)
+        const identity = this.#references.get(reference)
+        if (identity) {
+            this.#posts.delete(identity)
+            this.#references.delete(reference)
+        }
+    }
+
     clear(): void {
         this.#posts.clear()
         this.#references.clear()
