@@ -26,9 +26,11 @@
 
 动态列表同时覆盖当前登录账号、指定用户和好友动态流，并通过明确的
 `scope` 类型区分。SDK 管理内存中的登录态并提供可序列化快照；持久化由
-调用方负责，后续可通过可注入的存储适配器接入。
+调用方通过 `onSessionChange` 回调负责。
 
-视频发布、访客系统和相册管理暂不属于第一阶段范围。
+登录获取、浏览器运行时、持久化实现、框架适配器、WebUI、命令、LLM 与
+自动化业务不属于 SDK 职责；视频发布、访客系统和相册管理也不属于第一阶段
+范围。
 
 ## 安装
 
@@ -199,6 +201,16 @@ const deleted = await client.deleteOwnPost({ post })
 
 所有公共错误都继承 `QzoneError`，并带有稳定的 `code`。可以按具体错误类或
 错误码处理，`context` 只包含有限诊断字段：
+
+| 错误类                 | `code`             | 含义                                   |
+| ---------------------- | ------------------ | -------------------------------------- |
+| `QzoneValidationError` | `QZONE_VALIDATION` | 参数、本地数据或操作前置条件无效       |
+| `QzoneAuthError`       | `QZONE_AUTH`       | Session 缺失、失效或被登录流程拒绝     |
+| `QzoneRequestError`    | `QZONE_REQUEST`    | 网络、HTTP 或 Session 持久化链路失败   |
+| `QzoneRateLimitError`  | `QZONE_RATE_LIMIT` | QQ 空间服务端触发频率限制              |
+| `QzonePermissionError` | `QZONE_PERMISSION` | 当前账号无权读取或操作目标             |
+| `QzoneParseError`      | `QZONE_PARSE`      | 响应不符合 SDK 支持的协议格式          |
+| `QzoneCancelledError`  | `QZONE_CANCELLED`  | 读取被取消，或写操作在请求发送前被取消 |
 
 ```ts
 import {
