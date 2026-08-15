@@ -29,6 +29,18 @@ qzone-sdk/
 │   └── workflows/
 │       └── ci.yml          # 持续集成：格式、静态检查、测试与构建
 ├── src/
+│   ├── protocol/
+│   │   ├── comment.ts      # 评论与嵌套回复归一化
+│   │   ├── feed.ts         # Feed 容器、列表和分页元数据解析
+│   │   ├── html.ts         # HTML 文本、属性和脚本安全提取
+│   │   ├── media-url.ts    # 媒体 URL、类型和图片身份辅助
+│   │   ├── media.ts        # 图片、视频、音频和文件归一化
+│   │   ├── post-fields.ts  # 动态标识、作者和正文字段提取
+│   │   ├── post.ts         # 内部动态解析与详情合并
+│   │   ├── time.ts         # QQ 时间字段与 ISO 时间归一化
+│   │   ├── token.ts        # qzonetoken 安全提取
+│   │   ├── types.ts        # 内部协议动态与动作元数据契约
+│   │   └── value.ts        # unknown 值和 JSON 对象安全读取
 │   ├── transport/
 │   │   ├── abort.ts        # 请求超时、取消与可中断退避
 │   │   ├── fetch-transport.ts # Fetch 请求、重试、状态与错误编排
@@ -47,6 +59,12 @@ qzone-sdk/
 │   ├── index.ts            # SDK 公共导出入口
 │   └── types.ts            # SDK 公共模型、操作参数与结果类型
 ├── tests/
+│   ├── protocol/
+│   │   ├── comment.spec.ts # 评论与嵌套回复解析测试
+│   │   ├── feed.spec.ts    # Feed、动态和公共映射测试
+│   │   ├── html.spec.ts    # HTML 与 qzonetoken 解析测试
+│   │   ├── media.spec.ts   # 媒体识别、去重与归属测试
+│   │   └── time.spec.ts    # 时间字段和范围测试
 │   ├── transport/
 │   │   └── response.spec.ts # JSON、JSONP 与错误响应测试
 │   ├── session/
