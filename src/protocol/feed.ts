@@ -39,7 +39,8 @@ export function parseFeedPage(
     defaultAuthorId: QzoneId = ''
 ): ProtocolFeedPage {
     const page = normalizeFeedPage(value)
-    const rawItems = extractRawItems(value, page)
+    const pageItems = extractRawItems(page)
+    const rawItems = pageItems.length > 0 ? pageItems : extractRawItems(value)
     const items = rawItems.flatMap((raw) => {
         const parsed = parseProtocolPost(raw, defaultAuthorId)
         return parsed.id && parsed.authorId && !isIgnored(raw, parsed)
@@ -75,12 +76,13 @@ function normalizeFeedPage(value: unknown): ProtocolRecord {
     return firstRecord(root, ['feedpage', 'main']) ?? root
 }
 
-function extractRawItems(
-    original: unknown,
-    page: ProtocolRecord
-): readonly ProtocolRecord[] {
-    if (Array.isArray(original)) {
-        return asRecords(original)
+function extractRawItems(value: unknown): readonly ProtocolRecord[] {
+    if (Array.isArray(value)) {
+        return asRecords(value)
+    }
+    const page = asRecord(value)
+    if (!page) {
+        return []
     }
     for (const key of LIST_KEYS) {
         const value = page[key]
@@ -89,7 +91,7 @@ function extractRawItems(
         }
         const record = asRecord(value)
         if (record) {
-            const nested = extractRawItems(record, record)
+            const nested = extractRawItems(record)
             if (nested.length > 0) {
                 return nested
             }

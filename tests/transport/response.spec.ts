@@ -18,10 +18,23 @@ describe('transport response parsing', () => {
         })
     })
 
+    it('parses observed QQ JavaScript literal variants without evaluation', () => {
+        expect(
+            parseResponseData(
+                "_preloadCallback({ret:0,data:[{fid:'post-1',enabled:true}],missing:undefined,});"
+            )
+        ).toEqual({
+            ret: 0,
+            data: [{ fid: 'post-1', enabled: true }],
+            missing: null
+        })
+    })
+
     it('rejects malformed responses without evaluating code', () => {
         expect(() =>
             parseResponseData('callback(alert(1))', 'feed.list')
         ).toThrow(QzoneParseError)
+        expect(() => parseResponseData('[1,,2]')).toThrow(QzoneParseError)
     })
 
     it('limits and redacts diagnostic snippets', () => {

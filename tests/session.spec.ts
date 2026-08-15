@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { QzoneClient, QzoneValidationError } from '../src/index.js'
+import { SessionState } from '../src/session/session.js'
 
 const NOW = '2026-08-12T08:00:00.000Z'
 
@@ -142,6 +143,21 @@ describe('Session state', () => {
         })
 
         expect(client.getSessionInfo().persistencePending).toBe(false)
+    })
+
+    it('does not persist an unchanged protocol token', async () => {
+        const onSessionChange = vi.fn()
+        const session = new SessionState(
+            {
+                cookies: 'uin=o10001; p_skey=secret',
+                tokens: { '10001': 'token' }
+            },
+            { onSessionChange }
+        )
+
+        await session.setToken('10001', 'token')
+
+        expect(onSessionChange).not.toHaveBeenCalled()
     })
 
     it('clears credentials and protocol tokens', () => {

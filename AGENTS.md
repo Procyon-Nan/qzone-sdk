@@ -29,12 +29,22 @@ qzone-sdk/
 │   └── workflows/
 │       └── ci.yml          # 持续集成：格式、静态检查、测试与构建
 ├── src/
+│   ├── internal/
+│   │   ├── cursor.ts       # 实例与请求上下文绑定的不透明游标存储
+│   │   └── literal.ts      # 非严格 JavaScript 字面量的受控解析
+│   ├── operations/
+│   │   ├── feed.ts         # 三类 Feed、分页、回退与去重编排
+│   │   ├── post-cache.ts   # 内部协议动态的有界引用缓存
+│   │   ├── post.ts         # 动态详情、回退与列表字段补全
+│   │   └── read.ts         # QQ 空间只读端点请求与响应校验
 │   ├── protocol/
 │   │   ├── comment.ts      # 评论与嵌套回复归一化
+│   │   ├── endpoints.ts    # Feed 与详情只读端点描述
 │   │   ├── feed.ts         # Feed 容器、列表和分页元数据解析
 │   │   ├── html.ts         # HTML 文本、属性和脚本安全提取
 │   │   ├── media-url.ts    # 媒体 URL、类型和图片身份辅助
 │   │   ├── media.ts        # 图片、视频、音频和文件归一化
+│   │   ├── page.ts         # index/profile HTML Feed 与 Token 提取
 │   │   ├── post-fields.ts  # 动态标识、作者和正文字段提取
 │   │   ├── post.ts         # 内部动态解析与详情合并
 │   │   ├── time.ts         # QQ 时间字段与 ISO 时间归一化
@@ -59,11 +69,16 @@ qzone-sdk/
 │   ├── index.ts            # SDK 公共导出入口
 │   └── types.ts            # SDK 公共模型、操作参数与结果类型
 ├── tests/
+│   ├── internal/
+│   │   └── cursor.spec.ts  # 游标实例及请求上下文隔离测试
+│   ├── operations/
+│   │   └── feed.spec.ts    # 三类 Feed、回退、分页与详情集成测试
 │   ├── protocol/
 │   │   ├── comment.spec.ts # 评论与嵌套回复解析测试
 │   │   ├── feed.spec.ts    # Feed、动态和公共映射测试
 │   │   ├── html.spec.ts    # HTML 与 qzonetoken 解析测试
 │   │   ├── media.spec.ts   # 媒体识别、去重与归属测试
+│   │   ├── page.spec.ts    # index/profile 页面字面量解析测试
 │   │   └── time.spec.ts    # 时间字段和范围测试
 │   ├── transport/
 │   │   └── response.spec.ts # JSON、JSONP 与错误响应测试

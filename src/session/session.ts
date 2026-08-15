@@ -101,6 +101,9 @@ export class SessionState {
         if (!normalizedToken) {
             throw new QzoneValidationError('Token 不能为空')
         }
+        if (this.#tokens.get(normalizedAccountId) === normalizedToken) {
+            return
+        }
 
         this.#tokens.set(normalizedAccountId, normalizedToken)
         this.#touch()

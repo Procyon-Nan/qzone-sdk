@@ -1,4 +1,5 @@
 import { QzoneParseError } from '../errors.js'
+import { parseJavaScriptLiteral } from '../internal/literal.js'
 
 const JSONP_PATTERN =
     /^(?:[A-Za-z_$][\w$]*\.)*[A-Za-z_$][\w$]*\s*\(\s*([\s\S]*)\s*\)\s*;?$/u
@@ -15,14 +16,18 @@ export function parseResponseData(text: string, endpoint?: string): unknown {
 
     try {
         return JSON.parse(json)
-    } catch (cause) {
-        throw new QzoneParseError('QQ 空间响应不是有效的 JSON 或 JSONP', {
-            cause,
-            context: {
-                endpoint,
-                responseSnippet: createDiagnosticSnippet(normalized)
-            }
-        })
+    } catch (jsonCause) {
+        try {
+            return parseJavaScriptLiteral(json)
+        } catch (literalCause) {
+            throw new QzoneParseError('QQ 空间响应不是有效的 JSON 或 JSONP', {
+                cause: literalCause ?? jsonCause,
+                context: {
+                    endpoint,
+                    responseSnippet: createDiagnosticSnippet(normalized)
+                }
+            })
+        }
     }
 }
 

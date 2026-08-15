@@ -71,6 +71,34 @@ describe('protocol feed parsing', () => {
         })
     })
 
+    it('reads legacy feed items beside main pagination metadata', () => {
+        const page = parseFeedPage({
+            data: {
+                main: {
+                    attach: 'cursor-2',
+                    hasMoreFeeds: 1
+                },
+                data: [
+                    {
+                        key: 'post-3',
+                        opuin: '10003',
+                        nickname: '另一位好友',
+                        html: '<li><div class="f-info">好友动态</div></li>'
+                    }
+                ]
+            }
+        })
+
+        expect(page).toMatchObject({ cursor: 'cursor-2', hasMore: true })
+        expect(page.items).toHaveLength(1)
+        expect(page.items[0]).toMatchObject({
+            id: 'post-3',
+            authorId: '10003',
+            authorNickname: '另一位好友',
+            content: '好友动态'
+        })
+    })
+
     it('reads real msglist and shuoshuo detail field shapes', () => {
         expect(
             parseProtocolPost(

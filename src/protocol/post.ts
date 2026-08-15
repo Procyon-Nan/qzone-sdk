@@ -22,6 +22,21 @@ import {
     normalizeUrl
 } from './post-fields.js'
 
+const DETAIL_CONTAINER_KEYS = [
+    'data',
+    'feed',
+    'feeds',
+    'feedinfo',
+    'feedInfo',
+    'item',
+    'items',
+    'msg',
+    'msglist',
+    'cell',
+    'cells',
+    'shuoshuo'
+] as const
+
 export function parseProtocolPost(
     value: unknown,
     defaultAuthorId: QzoneId = ''
@@ -154,6 +169,73 @@ export function mergeProtocolPost(
     })
 }
 
+export function findPostDetail(
+    value: unknown,
+    target: { readonly id: QzoneId; readonly authorId: QzoneId }
+): ProtocolRecord | null {
+    const visited = new Set<object>()
+
+    const visit = (node: unknown, depth: number): ProtocolRecord | null => {
+        if (depth < 0 || typeof node !== 'object' || node === null) {
+            return null
+        }
+        if (visited.has(node)) {
+            return null
+        }
+        visited.add(node)
+
+        if (Array.isArray(node)) {
+            for (const item of node.slice(0, 100)) {
+                const found = visit(item, depth - 1)
+                if (found) {
+                    return found
+                }
+            }
+            return null
+        }
+
+        const record = asRecord(node)
+        if (!record) {
+            return null
+        }
+        const postId = extractPostId(record)
+        const authorId = extractAuthorId(record)
+        if (
+            postId === target.id &&
+            (!authorId || authorId === target.authorId)
+        ) {
+            return record
+        }
+        for (const key of DETAIL_CONTAINER_KEYS) {
+            const found = visit(record[key], depth - 1)
+            if (found) {
+                return found
+            }
+        }
+        return null
+    }
+
+    const exact = visit(value, 6)
+    if (exact) {
+        return exact
+    }
+
+    let candidate = asRecord(value)
+    for (let depth = 0; candidate && depth < 3; depth += 1) {
+        const nested = asRecord(candidate.data)
+        if (!nested) {
+            break
+        }
+        candidate = nested
+    }
+    return candidate &&
+        !extractPostId(candidate) &&
+        looksLikePostDetail(candidate) &&
+        !DETAIL_CONTAINER_KEYS.some((key) => Object.hasOwn(candidate, key))
+        ? candidate
+        : null
+}
+
 function computePostUrl(appId: number, authorId: string, id: string): string {
     if (!authorId || !id) {
         return ''
@@ -184,4 +266,18 @@ function hasAnyKey(
     keys: readonly string[]
 ): boolean {
     return record !== null && keys.some((key) => Object.hasOwn(record, key))
+}
+
+function looksLikePostDetail(record: ProtocolRecord): boolean {
+    return [
+        'content',
+        'con',
+        'summary',
+        'cell_summary',
+        'commentlist',
+        'comments',
+        'like',
+        'pic',
+        'pics'
+    ].some((key) => Object.hasOwn(record, key))
 }

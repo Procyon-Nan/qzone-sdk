@@ -44,6 +44,43 @@ yarn build
 
 构建产物输出至 `dist`，同时提供 ESM、CommonJS 和 TypeScript 类型声明。
 
+## 读取动态
+
+`QzoneClient` 通过判别联合明确区分当前账号、指定用户和好友动态流：
+
+```ts
+import { QzoneClient } from 'qzone-sdk'
+
+const client = new QzoneClient({
+    session: {
+        cookies: 'uin=o10001; p_skey=...'
+    }
+})
+
+const first = await client.listFeeds({ scope: 'self', limit: 10 })
+const next = first.nextCursor
+    ? await client.listFeeds({
+          scope: 'self',
+          limit: 10,
+          cursor: first.nextCursor
+      })
+    : null
+
+const profile = await client.listFeeds({
+    scope: 'profile',
+    userId: '10002',
+    limit: 10
+})
+const friends = await client.listFeeds({ scope: 'friends', limit: 10 })
+const post = profile.items[0]
+const detail = post ? await client.getPost({ post }) : null
+```
+
+`limit` 的有效范围为 1–20。`nextCursor` 是客户端实例及账号上下文绑定的
+不透明值，只能在同一 `QzoneClient`、同一账号、同一 scope 和同一目标账号
+中继续使用。动态详情会优先复用同一实例中的列表缓存补全缺失字段，但公共
+结果不会暴露 QQ 空间内部动作参数。
+
 ## 许可证
 
 [MIT](./LICENSE)
