@@ -30,23 +30,28 @@
 
 视频发布、访客系统和相册管理暂不属于第一阶段范围。
 
-## 开发
+## 安装
 
-项目要求 Node.js 20.19 或更高的兼容版本，并使用 Yarn Classic 管理依赖。
+运行环境需要 Node.js `^20.19.0 || >=22.12.0`。包同时提供 ESM、CommonJS
+和 TypeScript 类型声明：
 
 ```powershell
-yarn install
-yarn typecheck
-yarn lint
-yarn test
-yarn build
+npm install qzone-sdk
 ```
 
-构建产物输出至 `dist`，同时提供 ESM、CommonJS 和 TypeScript 类型声明。
+```ts
+import { QzoneClient } from 'qzone-sdk'
+```
 
-## 读取动态
+```js
+const { QzoneClient } = require('qzone-sdk')
+```
 
-`QzoneClient` 通过判别联合明确区分当前账号、指定用户和好友动态流：
+## Session 与客户端
+
+SDK 不负责登录。调用方需要提供已经取得的 QQ 空间 Cookie；既可以传入
+Cookie Header 文本，也可以传入名值对象。`accountId` 可省略，此时 SDK 会从
+`uin`、`p_uin` 等 Cookie 字段识别账号：
 
 ```ts
 import { QzoneClient } from 'qzone-sdk'
@@ -54,9 +59,38 @@ import { QzoneClient } from 'qzone-sdk'
 const client = new QzoneClient({
     session: {
         cookies: 'uin=o10001; p_skey=...'
+    },
+    onSessionChange: async (session) => {
+        await sessionStore.save(session)
     }
 })
+```
 
+一个客户端实例永久绑定一个账号。声明的 `accountId` 与 Cookie 中识别出的
+账号不一致时，构造或更新会抛出 `QzoneValidationError`。QQ 响应带回新 Cookie
+或 SDK 更新 Token 时会调用 `onSessionChange`；回调由调用方负责以原子写入等
+方式可靠持久化。
+
+```ts
+const info = client.getSessionInfo() // 不包含 Cookie 或 Token
+const snapshot = client.exportSession() // 包含完整凭据
+
+await client.updateSession({
+    accountId: snapshot.accountId,
+    cookies: refreshedCookies,
+    tokens: snapshot.tokens
+})
+```
+
+`exportSession()` 返回独立快照，可作为下一次构造的 `session`。若持久化回调
+失败，内存状态不会回滚，当前调用抛出 `QzoneRequestError`，并且
+`getSessionInfo().persistencePending` 为 `true`；后续持久化成功后自动清除。
+
+## 读取动态
+
+`QzoneClient` 通过判别联合明确区分当前账号、指定用户和好友动态流：
+
+```ts
 const first = await client.listFeeds({ scope: 'self', limit: 10 })
 const next = first.nextCursor
     ? await client.listFeeds({
@@ -88,6 +122,9 @@ const detail = post ? await client.getPost({ post }) : null
 和尺寸；支持 JPEG、PNG、GIF、BMP 和 WebP，单次最多九张：
 
 ```ts
+import { readFile } from 'node:fs/promises'
+
+const imageBytes = await readFile('result.png')
 const result = await client.publishPost({
     content: '今天完成了新的功能',
     images: [
@@ -127,8 +164,8 @@ if (comment.comment) {
     })
 }
 
-await client.like({ post })
-await client.unlike({ post })
+const liked = await client.like({ post })
+const unliked = await client.unlike({ post })
 ```
 
 互动内容不能为空，最终写请求不会自动重试。点赞前会读取当前状态；若已经是
@@ -140,10 +177,55 @@ await client.unlike({ post })
 前拒绝操作。删除后的 `verified` 表示详情端点已明确返回目标不存在：
 
 ```ts
-await client.deleteOwnPost({ post })
+const deleted = await client.deleteOwnPost({ post })
 ```
 
-对于任何 `unknown` 结果，调用方都应先重新读取状态，不得直接重复写入。
+### 处理写操作结果
+
+所有写操作都返回 `outcome`，调用方必须按可证明程度处理：
+
+| `outcome`         | 含义                               | 调用方处理                   |
+| ----------------- | ---------------------------------- | ---------------------------- |
+| `verified`        | 已通过只读请求确认最终状态         | 可按成功继续                 |
+| `accepted`        | 服务端明确接受，但尚未读回最终状态 | 稍后读取确认，不要立即重写   |
+| `unknown`         | 请求发出后无法确认是否生效         | 必须先读取状态，不要直接重试 |
+| `already-applied` | 写入前已经处于目标状态             | 无需再次写入                 |
+
+`PostMutationResult`、`CommentMutationResult` 和 `LikeMutationResult` 中的动态、
+评论或引用只在协议响应及验证能够提供时存在。调用方不得仅凭可选字段是否存在
+来代替 `outcome` 判断。
+
+## 错误与取消
+
+所有公共错误都继承 `QzoneError`，并带有稳定的 `code`。可以按具体错误类或
+错误码处理，`context` 只包含有限诊断字段：
+
+```ts
+import {
+    QzoneAuthError,
+    QzoneCancelledError,
+    QzoneError,
+    QzoneRateLimitError
+} from 'qzone-sdk'
+
+try {
+    await client.listFeeds({ scope: 'self' })
+} catch (error) {
+    if (error instanceof QzoneAuthError) {
+        // 重新取得 Session 后创建新客户端或更新同账号 Session。
+    } else if (error instanceof QzoneRateLimitError) {
+        // 按业务策略延后读取，不要立即循环重试。
+    } else if (error instanceof QzoneCancelledError) {
+        // 操作在允许取消的阶段停止。
+    } else if (error instanceof QzoneError) {
+        console.error(error.code, error.context)
+    }
+}
+```
+
+动态读取及所有写操作都可通过 options 中的 `signal` 取消。排队写操作若在
+开始前取消，会抛出 `QzoneCancelledError`；写请求已经发送后再取消，SDK 仍执行
+有限只读验证，并根据可观察状态返回结果。
 
 ## 并发、取消与关闭
 
@@ -165,12 +247,37 @@ await client.close()
 已发出的读取、正在执行的写操作及其有限验证结束，然后清除 Session、Token、
 动态引用缓存和分页游标。关闭后的客户端不可恢复，应创建新实例继续使用。
 
-`onSessionChange` 持久化回调失败时，Session 更新仍保留在内存中，调用会抛出
-`QzoneRequestError`，且 `getSessionInfo().persistencePending` 为 `true`；后续
-持久化成功后该标记自动清除。
-
 `clearSession()` 是同步操作，仅能在当前实例没有正在执行或排队的请求时调用；
 否则会抛出 `QzoneValidationError`，避免旧请求在清理后重新写入 Session 或缓存。
+
+## 安全边界
+
+- Cookie、Token 和 `exportSession()` 的结果是完整登录凭据。SDK 不会主动记录
+  这些值；调用方也不应把它们写入日志、错误消息或版本控制。
+- `logger` 只接收阶段、端点名、耗时、重试次数、HTTP 状态和错误码等白名单
+  字段，不包含请求正文、响应正文或凭据。
+- SDK 只允许 QQ 官方域名的 HTTP(S) 请求和受控重定向，不接受调用方传入任意
+  请求 URL。
+- 动态正文和评论内容由调用方决定，SDK 不执行内容生成、审核或业务权限判断。
+- 删除只面向当前 Session 账号自己的动态；无法确认归属或创建时间时拒绝请求。
+- 客户端及其游标、缓存和写队列不应跨账号复用。
+
+## 开发
+
+本仓库使用 Yarn Classic。完整本地验收命令为：
+
+```powershell
+yarn install --frozen-lockfile
+yarn format:check
+yarn lint
+yarn typecheck
+yarn test
+yarn build
+yarn smoke:package
+```
+
+构建输出位于 `dist`。包冒烟测试会核对发布文件清单、构建产物中的本机路径，
+并分别从 ESM 与 CommonJS 消费端验证公共运行时 API 和类型声明。
 
 ## 许可证
 

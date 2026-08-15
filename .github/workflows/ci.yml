@@ -39,3 +39,6 @@ jobs:
 
             - name: Build package
               run: yarn build
+
+            - name: Smoke test package
+              run: yarn smoke:package

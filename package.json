@@ -3,6 +3,9 @@
     "version": "0.1.0",
     "description": "A framework-agnostic TypeScript SDK for Qzone.",
     "keywords": [
+        "api",
+        "commonjs",
+        "esm",
         "qq",
         "qzone",
         "sdk",
@@ -24,9 +27,14 @@
     "types": "./dist/index.d.ts",
     "exports": {
         ".": {
-            "types": "./dist/index.d.ts",
-            "import": "./dist/index.js",
-            "require": "./dist/index.cjs"
+            "import": {
+                "types": "./dist/index.d.ts",
+                "default": "./dist/index.js"
+            },
+            "require": {
+                "types": "./dist/index.d.cts",
+                "default": "./dist/index.cjs"
+            }
         },
         "./package.json": "./package.json"
     },
@@ -46,9 +54,10 @@
         "format": "prettier --write .",
         "format:check": "prettier --check .",
         "lint": "eslint .",
+        "smoke:package": "node scripts/smoke-package.mjs",
         "test": "vitest run --passWithNoTests",
         "typecheck": "tsc --noEmit",
-        "prepublishOnly": "yarn typecheck && yarn build"
+        "prepublishOnly": "yarn typecheck && yarn build && yarn smoke:package"
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",
