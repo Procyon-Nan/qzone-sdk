@@ -25,7 +25,7 @@ import {
     resolveMutationPost,
     type MutationReferenceContext
 } from './references.js'
-import { verifyComment, verifyDeleted, verifyPost } from './verification.js'
+import { verifyComment, verifyDeleted, verifyLike } from './verification.js'
 import { QzoneWriteApi } from './write.js'
 
 export class MutationOperations {
@@ -225,10 +225,11 @@ export class MutationOperations {
             fallback = 'unknown'
         }
 
-        const verified = await verifyPost(
+        const verified = await verifyLike(
             this.#posts,
+            this.#references.feeds,
             post,
-            (value) => value.liked === liked
+            liked
         )
         return verified
             ? likeMutationResult('verified', liked, receipt?.message, verified)

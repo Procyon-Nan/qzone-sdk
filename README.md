@@ -279,6 +279,31 @@ yarn smoke:package
 构建输出位于 `dist`。包冒烟测试会核对发布文件清单、构建产物中的本机路径，
 并分别从 ESM 与 CommonJS 消费端验证公共运行时 API 和类型声明。
 
+## 真实 E2E
+
+真实 E2E 默认跳过，必须显式启用读写并提供专用测试账号 Session。测试会按
+顺序读取三类动态和详情，发布文字及图片动态，执行评论、回复、点赞、取消点赞
+和删除，最后只清理带有本次唯一运行标记的动态：
+
+```powershell
+$env:QZONE_E2E_ENABLED = '1'
+$env:QZONE_E2E_ALLOW_WRITES = '1'
+$env:QZONE_E2E_SESSION_FILE = 'tmp\qzone-session.json'
+$env:QZONE_E2E_EXPECTED_ACCOUNT_ID = '10001'
+$env:QZONE_E2E_PROFILE_USER_ID = '10002'
+yarn test:e2e
+```
+
+也可以使用 `QZONE_E2E_SESSION_JSON` 直接提供 Session JSON；设置后优先于
+`QZONE_E2E_SESSION_FILE`。真实写操作必须提供预期账号，用于阻止误用其他
+登录态；指定用户 ID 可省略，此时测试优先从好友动态中选择其他用户，找不到时
+读取当前账号的 profile。
+
+每次运行的步骤、SDK 日志、请求、原始响应、最终 Session 和清理结果保存在
+`tmp/e2e/<run-id>/`。该目录被 Git 忽略；其中包含未处理的真实响应和登录态，
+仅用于本地诊断。写请求返回 `unknown` 或删除结果未经确认时，测试不会直接重复
+写入，而会停止并在证据中记录需要人工处理的目标。
+
 ## 许可证
 
 [MIT](./LICENSE)

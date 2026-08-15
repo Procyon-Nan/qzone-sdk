@@ -23,8 +23,19 @@ describe('mutation receipts', () => {
     })
 
     it('rejects explicit protocol failures', () => {
-        expect(() =>
+        let failure: unknown
+        try {
             parseMutationReceipt({ code: -1 }, 'comment.create')
-        ).toThrow(QzoneRequestError)
+        } catch (error) {
+            failure = error
+        }
+
+        expect(failure).toBeInstanceOf(QzoneRequestError)
+        expect(failure).toMatchObject({
+            context: {
+                endpoint: 'comment.create',
+                serviceCode: -1
+            }
+        })
     })
 })

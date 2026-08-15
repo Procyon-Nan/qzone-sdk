@@ -321,6 +321,47 @@ describe('social mutation operations', () => {
         expect(fake.calls).toHaveLength(3)
     })
 
+    it('verifies a like from the friends feed when detail state stays stale', async () => {
+        const stale = detail(post({ liked: false }))
+        const fake = createFakeFetch([
+            stale,
+            jsonResponse({ ret: 0, msg: 'ok' }),
+            stale,
+            stale,
+            stale,
+            textResponse('', {
+                status: 302,
+                headers: { location: 'https://user.qzone.qq.com/10001' }
+            }),
+            jsonResponse([
+                {
+                    appid: 311,
+                    key: 'post-1',
+                    opuin: '20002',
+                    abstime: epochSeconds(),
+                    html: [
+                        '<li><div class="f-info">post</div>',
+                        '<a data-islike="1" data-likecnt="2"></a></li>'
+                    ].join('')
+                }
+            ])
+        ])
+
+        const result = await createClient(fake.fetch).like({
+            post: reference()
+        })
+
+        expect(result).toMatchObject({
+            outcome: 'verified',
+            liked: true,
+            message: 'ok',
+            post: { id: 'post-1', authorId: '20002', liked: true }
+        })
+        expect(
+            fake.calls.filter((request) => request.method === 'POST')
+        ).toHaveLength(1)
+    })
+
     it('does not try the direct like endpoint after an uncertain proxy write', async () => {
         const stale = detail(post({ liked: false }))
         const fake = createFakeFetch([
@@ -428,6 +469,28 @@ describe('delete own post', () => {
 
         expect(result).toEqual({
             outcome: 'accepted',
+            reference: ownReference()
+        })
+    })
+
+    it('verifies deletion from the QQ deleted-post service code', async () => {
+        const createdAt = epochSeconds()
+        const fake = createFakeFetch([
+            detail(post({ authorId: '10001', time: createdAt })),
+            jsonResponse({ code: 0, msg: 'deleted' }),
+            jsonResponse({
+                code: -8,
+                message: '对不起，原文已经被删除，无法查看'
+            })
+        ])
+
+        const result = await createClient(fake.fetch).deleteOwnPost({
+            post: ownReference()
+        })
+
+        expect(result).toEqual({
+            outcome: 'verified',
+            message: 'deleted',
             reference: ownReference()
         })
     })

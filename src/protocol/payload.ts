@@ -17,8 +17,12 @@ export function assertPayloadSuccess(value: unknown, endpoint: string): void {
             ) {
                 continue
             }
+            const serviceCode = toServiceCode(status)
             throw new QzoneRequestError('QQ 空间接口返回错误', {
-                context: { endpoint }
+                context: {
+                    endpoint,
+                    ...(serviceCode === undefined ? {} : { serviceCode })
+                }
             })
         }
     }
@@ -32,4 +36,16 @@ export function payloadRecords(value: unknown): readonly ProtocolRecord[] {
         current = asRecord(current.data)
     }
     return records
+}
+
+function toServiceCode(value: unknown): number | undefined {
+    if (typeof value === 'number') {
+        return Number.isFinite(value) ? value : undefined
+    }
+    if (typeof value !== 'string' || value.trim() === '') {
+        return undefined
+    }
+
+    const numeric = Number(value)
+    return Number.isFinite(numeric) ? numeric : undefined
 }

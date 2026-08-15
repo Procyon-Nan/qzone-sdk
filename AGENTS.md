@@ -81,6 +81,9 @@ qzone-sdk/
 ├── scripts/
 │   └── smoke-package.mjs   # 发布包内容及 ESM/CommonJS 导入验收
 ├── tests/
+│   ├── e2e/
+│   │   ├── harness.ts      # 真实 E2E 配置、证据记录与内存图片
+│   │   └── qzone.e2e.spec.ts # 专用账号全能力顺序验收与安全清理
 │   ├── internal/
 │   │   ├── cursor.spec.ts  # 游标实例及请求上下文隔离测试
 │   │   └── write-queue.spec.ts # 写队列顺序、取消与关闭测试

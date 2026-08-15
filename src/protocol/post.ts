@@ -69,7 +69,11 @@ export function parseProtocolPost(
         asRecords(raw.commentlist).length,
         comments.length
     )
-    const fallbackKey = computePostUrl(appId, authorId, id)
+    const markupLikeCount = extractMarkupAttribute(raw, 'data-likecnt')
+    const markupLiked = extractMarkupAttribute(raw, 'data-islike')
+    const structuredLikeCount = firstValue(like, ['num', 'likeNum', 'count'])
+    const rawLikeCount = firstValue(raw, ['likeNum', 'likenum', 'like_num'])
+    const fallbackKey = computeLikeKey(appId, authorId, id)
     const businessParameters = asRecord(operation.busi_param) ?? {}
     const authorAvatarUrl = normalizeUrl(
         firstValue(user, ['avatar', 'avatarUrl', 'figureurl', 'logimg']) ??
@@ -82,13 +86,14 @@ export function parseProtocolPost(
         ...(authorAvatarUrl ? { authorAvatarUrl } : {}),
         content: extractContent(raw),
         createdAt,
-        likeCount:
-            toInteger(firstValue(like, ['num', 'likeNum', 'count'])) ||
-            toInteger(firstValue(raw, ['likeNum', 'likenum', 'like_num'])),
+        likeCount: toInteger(
+            structuredLikeCount ?? rawLikeCount ?? markupLikeCount
+        ),
         commentCount,
         liked: toBoolean(
             firstValue(like, ['isliked', 'ismylike', 'isLike', 'islike']) ??
-                firstValue(raw, ['isliked', 'liked'])
+                firstValue(raw, ['isliked', 'liked']) ??
+                markupLiked
         ),
         media: parseMedia(raw, { postId: id, authorId }),
         comments,
@@ -236,20 +241,21 @@ export function findPostDetail(
         : null
 }
 
-function computePostUrl(appId: number, authorId: string, id: string): string {
+function computeLikeKey(appId: number, authorId: string, id: string): string {
     if (!authorId || !id) {
         return ''
     }
     return appId === 311
-        ? `https://user.qzone.qq.com/${authorId}/mood/${id}`
-        : `https://user.qzone.qq.com/${authorId}/app/${appId}/${id}`
+        ? `http://user.qzone.qq.com/${authorId}/mood/${id}`
+        : `http://user.qzone.qq.com/${authorId}/app/${appId}/${id}`
 }
 
 function hasLikeCount(raw: ProtocolRecord): boolean {
     const like = firstRecord(raw, ['like'])
     return (
         hasAnyKey(like, ['num', 'likeNum', 'count']) ||
-        hasAnyKey(raw, ['likeNum', 'likenum', 'like_num'])
+        hasAnyKey(raw, ['likeNum', 'likenum', 'like_num']) ||
+        extractMarkupAttribute(raw, 'data-likecnt') !== ''
     )
 }
 
@@ -257,7 +263,8 @@ function hasLiked(raw: ProtocolRecord): boolean {
     const like = firstRecord(raw, ['like'])
     return (
         hasAnyKey(like, ['isliked', 'ismylike', 'isLike', 'islike']) ||
-        hasAnyKey(raw, ['isliked', 'liked'])
+        hasAnyKey(raw, ['isliked', 'liked']) ||
+        extractMarkupAttribute(raw, 'data-islike') !== ''
     )
 }
 

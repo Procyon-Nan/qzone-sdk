@@ -7,6 +7,7 @@ import type {
     QzonePost
 } from '../types.js'
 import type { PostOperations } from './post.js'
+import type { FeedOperations } from './feed.js'
 
 const COMMENT_MATCH_WINDOW_MS = 5 * 60 * 1_000
 const VERIFICATION_DELAYS_MS = [0, 50, 150] as const
@@ -92,6 +93,37 @@ export async function verifyPost(
     return null
 }
 
+export async function verifyLike(
+    posts: PostOperations,
+    feeds: FeedOperations,
+    post: PostTarget,
+    liked: boolean
+): Promise<QzonePost | null> {
+    const detail = await verifyPost(
+        posts,
+        post,
+        (value) => value.liked === liked
+    )
+    if (detail) {
+        return detail
+    }
+
+    try {
+        const page = await feeds.listFeeds({ scope: 'friends', limit: 20 })
+        return (
+            page.items.find(
+                (value) =>
+                    value.id === post.id &&
+                    value.authorId === post.authorId &&
+                    value.liked === liked
+            ) ?? null
+        )
+    } catch {
+        // Verification never makes an already-sent write retryable.
+        return null
+    }
+}
+
 export async function verifyDeleted(
     posts: PostOperations,
     post: PostTarget
@@ -105,7 +137,8 @@ export async function verifyDeleted(
         } catch (error) {
             if (
                 error instanceof QzoneRequestError &&
-                error.context?.statusCode === 404
+                (error.context?.statusCode === 404 ||
+                    error.context?.serviceCode === -8)
             ) {
                 return true
             }

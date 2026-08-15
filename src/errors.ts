@@ -13,6 +13,7 @@ export interface QzoneErrorContext {
     readonly operation?: string
     readonly endpoint?: string
     readonly statusCode?: number
+    readonly serviceCode?: number
     readonly retryCount?: number
     readonly responseSnippet?: string
 }

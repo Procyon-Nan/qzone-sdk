@@ -16,7 +16,10 @@ describe('protocol feed parsing', () => {
                 key: 'post-1',
                 opuin: '10002',
                 nickname: '好友',
-                html: '<li><div class="f-info">正常动态</div></li>'
+                html: [
+                    '<li><div class="f-info">正常动态</div>',
+                    '<a data-islike="1" data-likecnt="5"></a></li>'
+                ].join('')
             }
         ])
 
@@ -25,7 +28,13 @@ describe('protocol feed parsing', () => {
             id: 'post-1',
             authorId: '10002',
             authorNickname: '好友',
-            content: '正常动态'
+            content: '正常动态',
+            likeCount: 5,
+            liked: true,
+            action: {
+                currentLikeKey: 'http://user.qzone.qq.com/10002/mood/post-1',
+                unlikeKey: 'http://user.qzone.qq.com/10002/mood/post-1'
+            }
         })
     })
 
@@ -176,6 +185,7 @@ describe('protocol feed parsing', () => {
             fid: 'post-1',
             hostuin: '10001',
             like: { num: 0, isliked: 0 },
+            html: '<a data-islike="1" data-likecnt="5"></a>',
             curkey: 'detail-current'
         })
 

@@ -56,11 +56,13 @@
         "lint": "eslint .",
         "smoke:package": "node scripts/smoke-package.mjs",
         "test": "vitest run --passWithNoTests",
+        "test:e2e": "vitest run tests/e2e/qzone.e2e.spec.ts --reporter=verbose",
         "typecheck": "tsc --noEmit",
         "prepublishOnly": "yarn typecheck && yarn build && yarn smoke:package"
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",
+        "@types/node": "^20.19.0",
         "eslint": "^10.8.1",
         "globals": "^17.10.0",
         "prettier": "^3.9.6",
