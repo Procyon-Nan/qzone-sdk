@@ -4,6 +4,7 @@ import type { SessionState } from '../session/session.js'
 import type {
     PostMutationResult,
     PostReference,
+    PublishImageInput,
     PublishPostOptions,
     QzonePost
 } from '../types.js'
@@ -15,6 +16,17 @@ import type { QzoneWriteApi } from './write.js'
 const MAX_PUBLISH_IMAGES = 9
 const MAX_UPLOAD_CONCURRENCY = 5
 const POST_MATCH_WINDOW_MS = 5 * 60 * 1_000
+
+export function snapshotPublishOptions(
+    options: PublishPostOptions
+): PublishPostOptions {
+    const normalized = normalizeOptions(options)
+    return Object.freeze({
+        content: normalized.content,
+        images: Object.freeze(normalized.images.map(snapshotPublishImage)),
+        ...(normalized.signal ? { signal: normalized.signal } : {})
+    })
+}
 
 export class PublishOperations {
     readonly #session: SessionState
@@ -87,7 +99,7 @@ export class PublishOperations {
             accountId && postId
                 ? Object.freeze({ id: postId, authorId: accountId })
                 : undefined
-        if (options.signal?.aborted || !accountId) {
+        if (!accountId) {
             return mutationResult(fallback, message, reference)
         }
 
@@ -171,6 +183,31 @@ function normalizeOptions(
         images,
         ...(options.signal ? { signal: options.signal } : {})
     }
+}
+
+function snapshotPublishImage(input: PublishImageInput): PublishImageInput {
+    if (!input || typeof input !== 'object') {
+        return input
+    }
+    return Object.freeze({
+        ...input,
+        data: snapshotImageData(input.data)
+    })
+}
+
+function snapshotImageData(
+    data: PublishImageInput['data']
+): PublishImageInput['data'] {
+    if (data instanceof Uint8Array) {
+        return new Uint8Array(data)
+    }
+    if (data instanceof ArrayBuffer) {
+        return data.slice(0)
+    }
+    if (data instanceof Blob) {
+        return data.slice()
+    }
+    return data
 }
 
 async function uploadAll<T, R>(

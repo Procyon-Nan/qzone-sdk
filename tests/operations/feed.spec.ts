@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
     QzoneClient,
@@ -272,6 +272,38 @@ describe('Feed operations', () => {
                 post: { id: 'target', authorId: '10002' }
             })
         ).rejects.toBeInstanceOf(QzoneParseError)
+    })
+
+    it('waits for an issued read before clearing instance state on close', async () => {
+        let resolveRead!: (response: Response) => void
+        const response = new Promise<Response>((resolve) => {
+            resolveRead = resolve
+        })
+        const fake = createFakeFetch([() => response])
+        const client = createClient(fake.fetch)
+        const reading = client.listFeeds({ scope: 'self', limit: 1 })
+        await vi.waitFor(() => expect(fake.calls).toHaveLength(1))
+        expect(() => client.clearSession()).toThrow(
+            '存在正在执行的操作，无法清除 Session'
+        )
+
+        const closing = client.close()
+        let closed = false
+        void closing.then(() => {
+            closed = true
+        })
+        await Promise.resolve()
+        expect(closed).toBe(false)
+        expect(client.getSessionInfo().accountId).toBe('10001')
+
+        resolveRead(
+            textResponse(indexHtml(feedPage([post('issued', '10001')])))
+        )
+        await expect(reading).resolves.toMatchObject({
+            items: [{ id: 'issued' }]
+        })
+        await closing
+        expect(client.getSessionInfo().accountId).toBeNull()
     })
 })
 

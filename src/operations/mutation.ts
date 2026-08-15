@@ -133,7 +133,7 @@ export class MutationOperations {
             fallback = 'unknown'
         }
 
-        if (await verifyDeleted(this.#posts, post, signal)) {
+        if (await verifyDeleted(this.#posts, post)) {
             this.#posts.deleteCachedPost(post)
             return postMutationResult(
                 'verified',
@@ -179,8 +179,7 @@ export class MutationOperations {
             content,
             replyTo,
             receipt?.id ?? null,
-            sentAt,
-            signal
+            sentAt
         )
         if (comment) {
             return commentMutationResult('verified', receipt?.message, comment)
@@ -229,8 +228,7 @@ export class MutationOperations {
         const verified = await verifyPost(
             this.#posts,
             post,
-            (value) => value.liked === liked,
-            signal
+            (value) => value.liked === liked
         )
         return verified
             ? likeMutationResult('verified', liked, receipt?.message, verified)

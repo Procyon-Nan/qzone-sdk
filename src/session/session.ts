@@ -32,6 +32,7 @@ export class SessionState {
     #tokens = new Map<QzoneId, string>()
     #updatedAt: string | null = null
     #persistencePending = false
+    #persistenceTail: Promise<void> = Promise.resolve()
     #closed = false
 
     constructor(input: QzoneSessionInput, options: SessionStateOptions = {}) {
@@ -161,21 +162,30 @@ export class SessionState {
     }
 
     async #notifyChange(): Promise<void> {
-        if (!this.#onSessionChange) {
+        const onSessionChange = this.#onSessionChange
+        if (!onSessionChange) {
             this.#persistencePending = false
             return
         }
 
-        try {
-            await this.#onSessionChange(this.export())
-            this.#persistencePending = false
-        } catch (cause) {
-            this.#persistencePending = true
-            throw new QzoneRequestError('Session 持久化回调执行失败', {
-                cause,
-                context: { operation: 'session.persist' }
-            })
-        }
+        const snapshot = this.export()
+        const persistence = this.#persistenceTail.then(async () => {
+            try {
+                await onSessionChange(snapshot)
+                this.#persistencePending = false
+            } catch (cause) {
+                this.#persistencePending = true
+                throw new QzoneRequestError('Session 持久化回调执行失败', {
+                    cause,
+                    context: { operation: 'session.persist' }
+                })
+            }
+        })
+        this.#persistenceTail = persistence.then(
+            () => undefined,
+            () => undefined
+        )
+        await persistence
     }
 
     #assertOpen(): void {

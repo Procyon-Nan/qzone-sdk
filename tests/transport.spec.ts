@@ -316,6 +316,61 @@ describe('Fetch transport', () => {
         expect(serialized).not.toContain('header-value')
         expect(serialized).not.toContain('p_skey')
     })
+
+    it('emits only whitelisted fields for retries and failures', async () => {
+        const events: Record<string, unknown>[] = []
+        const fake = createFakeFetch([
+            textResponse('private-response-value', { status: 503 }),
+            textResponse('private-response-value', { status: 403 })
+        ])
+        const transport = createTransport(fake.fetch, {
+            logger: (event) => events.push({ ...event })
+        })
+
+        await expect(
+            transport.request(READ_ENDPOINT, {
+                query: { secret: 'query-value' },
+                headers: { 'x-private': 'header-value' }
+            })
+        ).rejects.toBeInstanceOf(QzonePermissionError)
+
+        const allowed = new Set([
+            'level',
+            'phase',
+            'endpoint',
+            'durationMs',
+            'retryCount',
+            'statusCode',
+            'errorCode'
+        ])
+        for (const event of events) {
+            expect(Object.keys(event).every((key) => allowed.has(key))).toBe(
+                true
+            )
+        }
+        expect(events).toContainEqual(
+            expect.objectContaining({
+                phase: 'request.retry',
+                endpoint: 'feed.list',
+                retryCount: 1,
+                statusCode: 503
+            })
+        )
+        expect(events.at(-1)).toMatchObject({
+            level: 'error',
+            phase: 'request.error',
+            endpoint: 'feed.list',
+            retryCount: 1,
+            statusCode: 403,
+            errorCode: 'QZONE_PERMISSION'
+        })
+        const serialized = JSON.stringify(events)
+        expect(serialized).not.toContain('private-response-value')
+        expect(serialized).not.toContain('query-value')
+        expect(serialized).not.toContain('header-value')
+        expect(serialized).not.toContain('p_skey')
+        expect(serialized).not.toContain('token')
+    })
 })
 
 function createSession(onSessionChange?: () => void): SessionState {

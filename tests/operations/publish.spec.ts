@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
     QzoneClient,
@@ -267,6 +267,101 @@ describe('publish operations', () => {
                 content: 'missing'
             })
         ).resolves.toEqual({ outcome: 'unknown' })
+    })
+
+    it('continues read-only verification when cancellation occurs after sending', async () => {
+        const controller = new AbortController()
+        const now = Math.floor(Date.now() / 1_000)
+        const fake = createFakeFetch([
+            () => {
+                controller.abort()
+                return new Promise<Response>(() => undefined)
+            },
+            textResponse(
+                indexHtml([{ ...post('cancelled', 'sent'), time: now }])
+            )
+        ])
+
+        await expect(
+            createClient(fake.fetch).publishPost({
+                content: 'sent',
+                signal: controller.signal
+            })
+        ).resolves.toMatchObject({
+            outcome: 'verified',
+            post: { id: 'cancelled' }
+        })
+        expect(fake.calls).toHaveLength(2)
+    })
+
+    it('waits for the active write while closing and cancels queued writes', async () => {
+        let resolveWrite!: (response: Response) => void
+        const stalledWrite = new Promise<Response>((resolve) => {
+            resolveWrite = resolve
+        })
+        const fake = createFakeFetch([
+            () => stalledWrite,
+            textResponse(indexHtml([])),
+            jsonResponse({ data: post('active', 'active') })
+        ])
+        const client = createClient(fake.fetch)
+        const active = client.publishPost({ content: 'active' })
+        await vi.waitFor(() => expect(fake.calls).toHaveLength(1))
+        await expect(
+            client.listFeeds({ scope: 'self', limit: 1 })
+        ).resolves.toMatchObject({ items: [] })
+        expect(fake.calls).toHaveLength(2)
+        expect(() => client.clearSession()).toThrow(
+            '存在正在执行的操作，无法清除 Session'
+        )
+
+        const queued = client.publishPost({ content: 'queued' })
+        const queuedCancelled = expect(queued).rejects.toMatchObject({
+            code: 'QZONE_CANCELLED',
+            context: { operation: 'client.close' }
+        })
+        const closing = client.close()
+
+        expect(client.close()).toBe(closing)
+        await queuedCancelled
+        await expect(
+            client.listFeeds({ scope: 'self', limit: 1 })
+        ).rejects.toMatchObject({
+            code: 'QZONE_VALIDATION',
+            context: { operation: 'client.closed' }
+        })
+        await expect(
+            client.publishPost({ content: 'after-close' })
+        ).rejects.toMatchObject({
+            code: 'QZONE_VALIDATION',
+            context: { operation: 'client.closed' }
+        })
+        await expect(
+            client.updateSession({
+                cookies: 'uin=o10001; p_skey=updated'
+            })
+        ).rejects.toMatchObject({
+            code: 'QZONE_VALIDATION',
+            context: { operation: 'client.closed' }
+        })
+        expect(() => client.clearSession()).toThrow('QzoneClient 已关闭')
+        expect(client.getSessionInfo().accountId).toBe('10001')
+
+        resolveWrite(jsonResponse({ data: { fid: 'active' } }))
+        await expect(active).resolves.toMatchObject({
+            outcome: 'verified',
+            post: { id: 'active' }
+        })
+        await closing
+
+        expect(client.getSessionInfo()).toEqual({
+            accountId: null,
+            authenticated: false,
+            updatedAt: null,
+            persistencePending: false
+        })
+        expect(() => client.exportSession()).toThrow('当前没有可导出的 Session')
+        expect(fake.calls).toHaveLength(3)
     })
 })
 

@@ -145,6 +145,36 @@ describe('Session state', () => {
         expect(client.getSessionInfo().persistencePending).toBe(false)
     })
 
+    it('serializes concurrent persistence callbacks in Session update order', async () => {
+        let releaseFirst!: () => void
+        const firstPending = new Promise<void>((resolve) => {
+            releaseFirst = resolve
+        })
+        const persisted: string[] = []
+        const client = createClient(async (session) => {
+            persisted.push(session.cookies.p_skey ?? '')
+            if (persisted.length === 1) {
+                await firstPending
+            }
+        })
+
+        const first = client.updateSession({
+            cookies: 'uin=o10001; p_skey=first',
+            updatedAt: NOW
+        })
+        const second = client.updateSession({
+            cookies: 'uin=o10001; p_skey=second',
+            updatedAt: NOW
+        })
+
+        await vi.waitFor(() => expect(persisted).toEqual(['first']))
+        releaseFirst()
+        await Promise.all([first, second])
+
+        expect(persisted).toEqual(['first', 'second'])
+        expect(client.getSessionInfo().persistencePending).toBe(false)
+    })
+
     it('does not persist an unchanged protocol token', async () => {
         const onSessionChange = vi.fn()
         const session = new SessionState(

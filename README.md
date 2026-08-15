@@ -145,6 +145,33 @@ await client.deleteOwnPost({ post })
 
 对于任何 `unknown` 结果，调用方都应先重新读取状态，不得直接重复写入。
 
+## 并发、取消与关闭
+
+同一 `QzoneClient` 实例中的发布、评论、回复、点赞、取消点赞和删除操作按
+调用顺序进入 FIFO 写队列，避免多个写操作并发修改同一账号状态。动态列表
+和详情读取不进入写队列，可以与正在执行的写操作并发。
+
+写操作在开始前收到 `AbortSignal` 取消时会抛出 `QzoneCancelledError`。请求
+已经发送后再取消时，SDK 仍会完成有限的只读验证；无法确认最终状态时返回
+`unknown`，调用方不得直接重试。
+
+不再使用客户端时应等待 `close()`：
+
+```ts
+await client.close()
+```
+
+`close()` 可重复调用。它会立即拒绝新请求、取消尚未开始的排队写操作，等待
+已发出的读取、正在执行的写操作及其有限验证结束，然后清除 Session、Token、
+动态引用缓存和分页游标。关闭后的客户端不可恢复，应创建新实例继续使用。
+
+`onSessionChange` 持久化回调失败时，Session 更新仍保留在内存中，调用会抛出
+`QzoneRequestError`，且 `getSessionInfo().persistencePending` 为 `true`；后续
+持久化成功后该标记自动清除。
+
+`clearSession()` 是同步操作，仅能在当前实例没有正在执行或排队的请求时调用；
+否则会抛出 `QzoneValidationError`，避免旧请求在清理后重新写入 Session 或缓存。
+
 ## 许可证
 
 [MIT](./LICENSE)

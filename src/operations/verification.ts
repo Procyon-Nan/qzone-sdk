@@ -18,8 +18,7 @@ export async function verifyComment(
     content: string,
     replyTo: CommentReference | null,
     receiptId: string | null,
-    sentAt: number,
-    signal?: AbortSignal
+    sentAt: number
 ): Promise<QzoneComment | null> {
     const accountId = session.accountId
     if (!accountId) {
@@ -27,31 +26,26 @@ export async function verifyComment(
     }
     const latestAllowed = Date.now() + COMMENT_MATCH_WINDOW_MS
     const earliestAllowed = sentAt - COMMENT_MATCH_WINDOW_MS
-    const verified = await verifyPost(
-        posts,
-        post,
-        (value) => {
-            if (receiptId) {
-                return value.comments.some(
-                    (comment) =>
-                        comment.id === receiptId &&
-                        comment.author.id === accountId &&
-                        comment.parentId === (replyTo?.id ?? null)
-                )
-            }
-            return (
-                matchingComments(
-                    value,
-                    accountId,
-                    content,
-                    replyTo?.id ?? null,
-                    earliestAllowed,
-                    latestAllowed
-                ).length === 1
+    const verified = await verifyPost(posts, post, (value) => {
+        if (receiptId) {
+            return value.comments.some(
+                (comment) =>
+                    comment.id === receiptId &&
+                    comment.author.id === accountId &&
+                    comment.parentId === (replyTo?.id ?? null)
             )
-        },
-        signal
-    )
+        }
+        return (
+            matchingComments(
+                value,
+                accountId,
+                content,
+                replyTo?.id ?? null,
+                earliestAllowed,
+                latestAllowed
+            ).length === 1
+        )
+    })
     if (!verified) {
         return null
     }
@@ -80,18 +74,14 @@ export async function verifyComment(
 export async function verifyPost(
     posts: PostOperations,
     post: PostTarget,
-    matches: (post: QzonePost) => boolean,
-    signal?: AbortSignal
+    matches: (post: QzonePost) => boolean
 ): Promise<QzonePost | null> {
     for (const delayMs of VERIFICATION_DELAYS_MS) {
-        if (signal?.aborted) {
-            return null
-        }
         if (delayMs > 0) {
             await wait(delayMs)
         }
         try {
-            const current = await posts.getPost({ post, signal })
+            const current = await posts.getPost({ post })
             if (matches(current)) {
                 return current
             }
@@ -104,18 +94,14 @@ export async function verifyPost(
 
 export async function verifyDeleted(
     posts: PostOperations,
-    post: PostTarget,
-    signal?: AbortSignal
+    post: PostTarget
 ): Promise<boolean> {
     for (const delayMs of VERIFICATION_DELAYS_MS) {
-        if (signal?.aborted) {
-            return false
-        }
         if (delayMs > 0) {
             await wait(delayMs)
         }
         try {
-            await posts.getPost({ post, signal })
+            await posts.getPost({ post })
         } catch (error) {
             if (
                 error instanceof QzoneRequestError &&

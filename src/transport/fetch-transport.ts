@@ -124,6 +124,7 @@ export class FetchTransport {
                 })
                 return response
             } catch (error) {
+                let failure: QzoneError
                 if (error instanceof AttemptFailure) {
                     if (
                         endpoint.operation === 'read' &&
@@ -134,28 +135,36 @@ export class FetchTransport {
                         await delay(this.#retryDelayMs(attempt), options.signal)
                         continue
                     }
-                    throw this.#mapAttemptFailure(endpoint, error, attempt - 1)
-                }
-
-                if (error instanceof PersistenceFailure) {
+                    failure = this.#mapAttemptFailure(
+                        endpoint,
+                        error,
+                        attempt - 1
+                    )
+                } else if (error instanceof PersistenceFailure) {
                     if (endpoint.operation === 'write') {
-                        throw new UncertainTransportError(
+                        failure = new UncertainTransportError(
                             '写请求已响应，但 Session 持久化失败',
                             {
                                 cause: error.cause,
                                 context: { endpoint: endpoint.id }
                             }
                         )
+                    } else {
+                        failure = error.cause
                     }
-                    throw error.cause
+                } else if (error instanceof QzoneError) {
+                    failure = error
+                } else {
+                    failure = new QzoneRequestError('QQ 空间请求失败', {
+                        cause: error,
+                        context: {
+                            endpoint: endpoint.id,
+                            retryCount: attempt - 1
+                        }
+                    })
                 }
-                if (error instanceof QzoneError) {
-                    throw error
-                }
-                throw new QzoneRequestError('QQ 空间请求失败', {
-                    cause: error,
-                    context: { endpoint: endpoint.id, retryCount: attempt - 1 }
-                })
+                this.#logFailure(endpoint.id, startedAt, attempt - 1, failure)
+                throw failure
             }
         }
 
@@ -371,6 +380,25 @@ export class FetchTransport {
             endpoint,
             retryCount,
             statusCode
+        })
+    }
+
+    #logFailure(
+        endpoint: string,
+        startedAt: number,
+        retryCount: number,
+        error: QzoneError
+    ): void {
+        this.#log({
+            level: 'error',
+            phase: 'request.error',
+            endpoint,
+            durationMs: Date.now() - startedAt,
+            retryCount,
+            ...(error.context?.statusCode !== undefined
+                ? { statusCode: error.context.statusCode }
+                : {}),
+            errorCode: error.code
         })
     }
 

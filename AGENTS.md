@@ -31,7 +31,8 @@ qzone-sdk/
 ├── src/
 │   ├── internal/
 │   │   ├── cursor.ts       # 实例与请求上下文绑定的不透明游标存储
-│   │   └── literal.ts      # 非严格 JavaScript 字面量的受控解析
+│   │   ├── literal.ts      # 非严格 JavaScript 字面量的受控解析
+│   │   └── write-queue.ts  # 实例级 FIFO 写队列与关闭协调
 │   ├── operations/
 │   │   ├── feed.ts         # 三类 Feed、分页、回退与去重编排
 │   │   ├── mutation.ts     # 评论、点赞、删除与结果验证编排
@@ -79,7 +80,8 @@ qzone-sdk/
 │   └── types.ts            # SDK 公共模型、操作参数与结果类型
 ├── tests/
 │   ├── internal/
-│   │   └── cursor.spec.ts  # 游标实例及请求上下文隔离测试
+│   │   ├── cursor.spec.ts  # 游标实例及请求上下文隔离测试
+│   │   └── write-queue.spec.ts # 写队列顺序、取消与关闭测试
 │   ├── operations/
 │   │   ├── feed.spec.ts    # 三类 Feed、回退、分页与详情集成测试
 │   │   ├── mutation.spec.ts # 评论、点赞、删除和故障语义测试
