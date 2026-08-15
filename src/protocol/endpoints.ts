@@ -77,6 +77,22 @@ export function h5DetailEndpoint(
     )
 }
 
+export function imageUploadEndpoint(accountId: QzoneId): TransportEndpoint {
+    return writeEndpoint(
+        'post.image.upload',
+        'https://up.qzone.qq.com/cgi-bin/upload/cgi_upload_image',
+        accountId
+    )
+}
+
+export function publishPostEndpoint(accountId: QzoneId): TransportEndpoint {
+    return writeEndpoint(
+        'post.publish',
+        'https://user.qzone.qq.com/proxy/domain/taotao.qzone.qq.com/cgi-bin/emotion_cgi_publish_v6',
+        accountId
+    )
+}
+
 function readEndpoint(
     id: string,
     url: string,
@@ -105,5 +121,23 @@ function tokenEndpoint(
     return Object.freeze({
         ...readEndpoint(id, url, referer),
         tokenAccountId
+    })
+}
+
+function writeEndpoint(
+    id: string,
+    url: string,
+    accountId: QzoneId
+): TransportEndpoint {
+    return Object.freeze({
+        id,
+        method: 'POST',
+        url,
+        operation: 'write',
+        authentication: 'required',
+        includeGtk: true,
+        referer: `https://user.qzone.qq.com/${accountId}`,
+        origin: 'https://user.qzone.qq.com',
+        redirect: 'none'
     })
 }

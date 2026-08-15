@@ -16,8 +16,8 @@ import {
 } from '../protocol/endpoints.js'
 import { parseFeedPage } from '../protocol/feed.js'
 import { parseIndexPageHtml, parseProfilePageHtml } from '../protocol/page.js'
+import { assertPayloadSuccess } from '../protocol/payload.js'
 import type { ProtocolFeedPage, ProtocolPost } from '../protocol/types.js'
-import { asRecord } from '../protocol/value.js'
 import type { SessionState } from '../session/session.js'
 import type { QzoneId } from '../types.js'
 import type { FetchTransport } from '../transport/fetch-transport.js'
@@ -235,34 +235,6 @@ export function shouldFallbackRead(error: unknown): boolean {
     }
     const status = error.context?.statusCode ?? 0
     return [301, 302, 303, 307, 308].includes(status) || status >= 500
-}
-
-function assertPayloadSuccess(value: unknown, endpoint: string): void {
-    const root = asRecord(value)
-    const candidates = [root, root ? asRecord(root.data) : null]
-    for (const record of candidates) {
-        if (!record) {
-            continue
-        }
-        for (const key of ['ret', 'code', 'err', 'error']) {
-            if (!Object.hasOwn(record, key)) {
-                continue
-            }
-            const status = record[key]
-            if (
-                status === null ||
-                status === undefined ||
-                status === false ||
-                status === 0 ||
-                status === '0'
-            ) {
-                continue
-            }
-            throw new QzoneRequestError('QQ 空间接口返回错误', {
-                context: { endpoint }
-            })
-        }
-    }
 }
 
 function serializeBusinessParameters(

@@ -1,13 +1,17 @@
 import { FeedOperations } from './operations/feed.js'
 import { PostCache } from './operations/post-cache.js'
 import { PostOperations } from './operations/post.js'
+import { PublishOperations } from './operations/publish.js'
 import { QzoneReadApi } from './operations/read.js'
+import { QzoneWriteApi } from './operations/write.js'
 import { SessionState } from './session/session.js'
 import { FetchTransport } from './transport/fetch-transport.js'
 import type {
     FeedPage,
     GetPostOptions,
     ListFeedsOptions,
+    PostMutationResult,
+    PublishPostOptions,
     QzoneClientOptions,
     QzonePost,
     QzoneSession,
@@ -20,6 +24,7 @@ export class QzoneClient {
     readonly #feeds: FeedOperations
     readonly #posts: PostOperations
     readonly #postCache: PostCache
+    readonly #publish: PublishOperations
 
     constructor(options: QzoneClientOptions) {
         this.#session = new SessionState(options.session, {
@@ -35,6 +40,13 @@ export class QzoneClient {
         this.#postCache = new PostCache()
         this.#feeds = new FeedOperations(this.#session, read, this.#postCache)
         this.#posts = new PostOperations(read, this.#postCache)
+        const write = new QzoneWriteApi(this.#session, transport)
+        this.#publish = new PublishOperations(
+            this.#session,
+            write,
+            this.#feeds,
+            this.#posts
+        )
     }
 
     listFeeds(options: ListFeedsOptions): Promise<FeedPage> {
@@ -43,6 +55,10 @@ export class QzoneClient {
 
     getPost(options: GetPostOptions): Promise<QzonePost> {
         return this.#posts.getPost(options)
+    }
+
+    publishPost(options: PublishPostOptions): Promise<PostMutationResult> {
+        return this.#publish.publishPost(options)
     }
 
     getSessionInfo(): SessionInfo {

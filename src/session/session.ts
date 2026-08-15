@@ -62,6 +62,10 @@ export class SessionState {
         return this.#tokens.get(accountId)
     }
 
+    getCookie(name: string): string | undefined {
+        return this.#cookies.get(name)
+    }
+
     getInfo(): SessionInfo {
         return {
             accountId: this.#accountId,

@@ -81,6 +81,32 @@ const detail = post ? await client.getPost({ post }) : null
 中继续使用。动态详情会优先复用同一实例中的列表缓存补全缺失字段，但公共
 结果不会暴露 QQ 空间内部动作参数。
 
+## 发布动态
+
+`publishPost()` 支持纯文字、纯图片或图文动态。图片输入只接受内存中的
+`Uint8Array`、`ArrayBuffer` 或 `Blob`，SDK 会复制输入并校验真实文件签名
+和尺寸；支持 JPEG、PNG、GIF、BMP 和 WebP，单次最多九张：
+
+```ts
+const result = await client.publishPost({
+    content: '今天完成了新的功能',
+    images: [
+        {
+            data: imageBytes,
+            name: 'result.png',
+            mimeType: 'image/png'
+        }
+    ]
+})
+```
+
+正文会原样发送，不会由 SDK 清洗或截断。图片最短边须至少为 16 像素，
+多图上传的并发数最多为五。最终发布请求不会自动重试。
+
+发布结果的 `outcome` 用于区分可证明的状态：`verified` 表示已读回目标动态，
+`accepted` 表示服务端明确接受但尚未读回，`unknown` 表示请求发送后无法确认
+是否成功。调用方不得把 `unknown` 当作失败后直接重试，否则可能产生重复动态。
+
 ## 许可证
 
 [MIT](./LICENSE)
