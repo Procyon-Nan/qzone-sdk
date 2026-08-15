@@ -236,15 +236,16 @@ function runNpm(args, cwd) {
 
 function npmEnvironment() {
     const environment = { ...process.env }
-    const inheritedYarnOptions = new Set([
+    const childNpmExcludedOptions = new Set([
         'npm_config_argv',
+        'npm_config_dry_run',
         'npm_config_version_commit_hooks',
         'npm_config_version_git_message',
         'npm_config_version_git_tag',
         'npm_config_version_tag_prefix'
     ])
     for (const name of Object.keys(environment)) {
-        if (inheritedYarnOptions.has(name.toLowerCase())) {
+        if (childNpmExcludedOptions.has(name.toLowerCase())) {
             delete environment[name]
         }
     }
