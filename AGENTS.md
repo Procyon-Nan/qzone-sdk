@@ -99,6 +99,7 @@ qzone-sdk/
 │   │   ├── media.spec.ts   # 媒体识别、去重与归属测试
 │   │   ├── mutation.spec.ts # 社交写操作响应解析测试
 │   │   ├── page.spec.ts    # index/profile 页面字面量解析测试
+│   │   ├── payload.spec.ts # 业务码与登录态失效检测测试
 │   │   └── time.spec.ts    # 时间字段和范围测试
 │   ├── transport/
 │   │   └── response.spec.ts # JSON、JSONP 与错误响应测试

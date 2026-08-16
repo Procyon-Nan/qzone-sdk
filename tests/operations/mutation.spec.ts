@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { QzoneClient, QzoneValidationError } from '../../src/index.js'
+import {
+    QzoneAuthError,
+    QzoneClient,
+    QzoneValidationError
+} from '../../src/index.js'
 import { createFakeFetch } from '../support/fake-fetch.js'
 import { jsonResponse, textResponse } from '../support/fixtures.js'
 
@@ -205,6 +209,26 @@ describe('social mutation operations', () => {
         expect(
             fake.calls.filter((request) => request.method === 'POST')
         ).toHaveLength(1)
+    })
+
+    it('fails definitely when the write reports an expired session', async () => {
+        const now = epochSeconds()
+        const fake = createFakeFetch([
+            detail(post({ time: now })),
+            jsonResponse({ code: -3000, msg: '请先登录' })
+        ])
+
+        await expect(
+            createClient(fake.fetch).comment({
+                post: reference(),
+                content: 'expired session'
+            })
+        ).rejects.toBeInstanceOf(QzoneAuthError)
+
+        expect(
+            fake.calls.filter((request) => request.method === 'POST')
+        ).toHaveLength(1)
+        expect(fake.calls).toHaveLength(2)
     })
 
     it('does not send an uncertain reply twice', async () => {
