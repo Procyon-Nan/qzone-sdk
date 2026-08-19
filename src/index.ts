@@ -38,6 +38,7 @@ export type {
     QzoneAudioMedia,
     QzoneClientOptions,
     QzoneComment,
+    QzoneCommentKind,
     QzoneCookieInput,
     QzoneFileMedia,
     QzoneId,

@@ -47,13 +47,22 @@ export interface QzoneFileMedia extends QzoneMediaBase {
 export type QzoneMedia =
     QzoneImageMedia | QzoneVideoMedia | QzoneAudioMedia | QzoneFileMedia
 
+/** 评论节点类型：一级评论或评论区内的回复。 */
+export type QzoneCommentKind = 'comment' | 'reply'
+
 /** 已归一化的评论或嵌套回复。 */
 export interface QzoneComment {
     readonly id: QzoneId
     readonly author: QzoneUser
     readonly content: string
     readonly createdAt: QzoneTimestamp | null
+    /** 兼容字段：协议或容器提供的结构父节点。 */
     readonly parentId: QzoneId | null
+    /** 回复所属的一级评论；一级评论自身为 `null`。 */
+    readonly threadRoot: CommentReference | null
+    /** 协议明确报告的实际回复目标；无法确认时为 `null`。 */
+    readonly replyTo: CommentReference | null
+    readonly kind: QzoneCommentKind
 }
 
 /** 不包含 QQ 内部动作参数的动态引用。 */
@@ -72,6 +81,8 @@ export interface QzonePost extends PostReference {
     readonly liked: boolean
     readonly media: readonly QzoneMedia[]
     readonly comments: readonly QzoneComment[]
+    /** 当前评论快照是否包含协议报告的全部一级评论和嵌套回复。 */
+    readonly commentsComplete: boolean
 }
 
 /** 动态流范围：当前账号、指定用户或好友动态。 */

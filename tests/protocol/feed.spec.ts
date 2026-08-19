@@ -197,6 +197,101 @@ describe('protocol feed parsing', () => {
         })
     })
 
+    it('counts first-level comments without inflating totals with replies', () => {
+        const post = parseProtocolPost({
+            fid: 'post-1',
+            hostuin: '10001',
+            cmtnum: 1,
+            commentlist: [
+                {
+                    tid: 'c1',
+                    uin: '10002',
+                    content: 'root',
+                    replynum: 2,
+                    list_3: [
+                        { tid: 'r1', uin: '10003', content: 'one' },
+                        { tid: 'r2', uin: '10004', content: 'two' }
+                    ]
+                }
+            ]
+        })
+
+        expect(post.commentCount).toBe(1)
+        expect(post.comments).toHaveLength(3)
+        expect(post.commentsComplete).toBe(false)
+    })
+
+    it('uses the current detail comment snapshot and completeness state', () => {
+        const preview = parseProtocolPost({
+            fid: 'post-1',
+            hostuin: '10001',
+            comment: {
+                num: 1,
+                comments: [
+                    {
+                        tid: 'preview',
+                        uin: '10002',
+                        content: 'preview'
+                    }
+                ]
+            }
+        })
+        const complete = mergeProtocolPost(preview, {
+            fid: 'post-1',
+            hostuin: '10001',
+            cmtnum: 1,
+            commentlist: [
+                {
+                    tid: 'detail',
+                    uin: '10003',
+                    content: 'detail',
+                    replynum: 0
+                }
+            ]
+        })
+        const mergedWithCurrentDetail = mergeProtocolPost(complete, {
+            fid: 'post-1',
+            hostuin: '10001',
+            comment: {
+                num: 1,
+                comments: [
+                    {
+                        tid: 'new-preview',
+                        uin: '10004',
+                        content: 'new preview'
+                    }
+                ]
+            }
+        })
+
+        expect(complete.commentsComplete).toBe(true)
+        expect(complete.comments.map((comment) => comment.id)).toEqual([
+            'detail'
+        ])
+        expect(mergedWithCurrentDetail.commentsComplete).toBe(false)
+        expect(
+            mergedWithCurrentDetail.comments.map((comment) => comment.id)
+        ).toEqual(['new-preview'])
+    })
+
+    it('lets a complete empty detail clear an older preview', () => {
+        const preview = parseProtocolPost({
+            fid: 'post-1',
+            hostuin: '10001',
+            comments: [{ tid: 'stale', uin: '10002', content: 'stale' }]
+        })
+        const merged = mergeProtocolPost(preview, {
+            fid: 'post-1',
+            hostuin: '10001',
+            cmtnum: 0,
+            commentlist: []
+        })
+
+        expect(merged.comments).toEqual([])
+        expect(merged.commentsComplete).toBe(true)
+        expect(merged.commentCount).toBe(0)
+    })
+
     it('maps protocol posts without leaking internal metadata', () => {
         const publicPost = toPublicPost(
             parseProtocolPost({
@@ -216,6 +311,7 @@ describe('protocol feed parsing', () => {
             content: '正文'
         })
         expect(publicPost).not.toHaveProperty('action')
+        expect(publicPost.commentsComplete).toBe(false)
         expect(JSON.stringify(publicPost)).not.toContain('secret-action-key')
         expect(JSON.stringify(publicPost)).not.toContain('private')
     })

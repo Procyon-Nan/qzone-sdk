@@ -190,6 +190,103 @@ describe('Feed operations', () => {
         expect(detail.content).not.toContain('neighbor')
     })
 
+    it('does not let a Feed preview overwrite complete detail comments', async () => {
+        const now = Math.floor(Date.now() / 1_000)
+        const rootComment = {
+            tid: 'detail-comment',
+            uin: '30003',
+            content: 'detail comment',
+            create_time: now,
+            reply_num: 0
+        }
+        const fake = createFakeFetch([
+            jsonResponse({
+                data: [
+                    {
+                        ...post('target', '10002'),
+                        cmtnum: 1,
+                        commentlist: [rootComment]
+                    }
+                ]
+            }),
+            textResponse(
+                profileHtml(
+                    feedPage([
+                        {
+                            ...post('target', '10002'),
+                            comment: {
+                                num: 1,
+                                comments: [
+                                    {
+                                        tid: 'preview-comment',
+                                        uin: '30004',
+                                        content: 'preview'
+                                    }
+                                ]
+                            }
+                        }
+                    ])
+                )
+            ),
+            async (request) => {
+                expect(request.method).toBe('POST')
+                const form = new URLSearchParams(await request.text())
+                expect(form.get('commentId')).toBe('detail-comment')
+                expect(form.get('commentUin')).toBe('30003')
+                return jsonResponse({ data: { commentId: 'reply-new' } })
+            },
+            jsonResponse({
+                data: [
+                    {
+                        ...post('target', '10002'),
+                        cmtnum: 1,
+                        commentlist: [
+                            {
+                                ...rootComment,
+                                reply_num: 1,
+                                list_3: [
+                                    {
+                                        tid: 'reply-new',
+                                        uin: '10001',
+                                        content: 'reply',
+                                        create_time: now
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            })
+        ])
+        const client = createClient(fake.fetch)
+
+        const detail = await client.getPost({
+            post: { id: 'target', authorId: '10002' }
+        })
+        expect(detail.commentsComplete).toBe(true)
+
+        await client.listFeeds({
+            scope: 'profile',
+            userId: '10002',
+            limit: 1
+        })
+        const result = await client.reply({
+            post: { id: 'target', authorId: '10002' },
+            comment: { id: 'detail-comment', authorId: '30003' },
+            content: 'reply'
+        })
+
+        expect(result).toMatchObject({
+            outcome: 'verified',
+            comment: {
+                id: 'reply-new',
+                kind: 'reply',
+                threadRoot: { id: 'detail-comment', authorId: '30003' }
+            }
+        })
+        expect(fake.calls).toHaveLength(4)
+    })
+
     it('falls back to token-bound H5 detail after legacy detail is rejected', async () => {
         const fake = createFakeFetch([
             textResponse('forbidden', { status: 403 }),

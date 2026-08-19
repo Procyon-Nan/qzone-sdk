@@ -20,6 +20,8 @@ export interface ProtocolPost {
     readonly liked: boolean
     readonly media: readonly QzoneMedia[]
     readonly comments: readonly QzoneComment[]
+    readonly commentsComplete: boolean
+    readonly commentSnapshotPresent: boolean
     readonly action: ProtocolPostAction
 }
 
@@ -44,6 +46,7 @@ export function toPublicPost(post: ProtocolPost): QzonePost {
         commentCount: post.commentCount,
         liked: post.liked,
         media: Object.freeze([...post.media]),
-        comments: Object.freeze([...post.comments])
+        comments: Object.freeze([...post.comments]),
+        commentsComplete: post.commentsComplete
     })
 }

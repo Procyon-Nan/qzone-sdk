@@ -18,6 +18,7 @@ export async function verifyComment(
     post: PostTarget,
     content: string,
     replyTo: CommentReference | null,
+    threadRoot: CommentReference | null,
     receiptId: string | null,
     sentAt: number
 ): Promise<QzoneComment | null> {
@@ -28,20 +29,14 @@ export async function verifyComment(
     const latestAllowed = Date.now() + COMMENT_MATCH_WINDOW_MS
     const earliestAllowed = sentAt - COMMENT_MATCH_WINDOW_MS
     const verified = await verifyPost(posts, post, (value) => {
-        if (receiptId) {
-            return value.comments.some(
-                (comment) =>
-                    comment.id === receiptId &&
-                    comment.author.id === accountId &&
-                    comment.parentId === (replyTo?.id ?? null)
-            )
-        }
         return (
             matchingComments(
                 value,
                 accountId,
                 content,
-                replyTo?.id ?? null,
+                replyTo,
+                threadRoot,
+                receiptId,
                 earliestAllowed,
                 latestAllowed
             ).length === 1
@@ -50,22 +45,14 @@ export async function verifyComment(
     if (!verified) {
         return null
     }
-    if (receiptId) {
-        return (
-            verified.comments.find(
-                (comment) =>
-                    comment.id === receiptId &&
-                    comment.author.id === accountId &&
-                    comment.parentId === (replyTo?.id ?? null)
-            ) ?? null
-        )
-    }
     return (
         matchingComments(
             verified,
             accountId,
             content,
-            replyTo?.id ?? null,
+            replyTo,
+            threadRoot,
+            receiptId,
             earliestAllowed,
             latestAllowed
         )[0] ?? null
@@ -152,17 +139,31 @@ function matchingComments(
     post: QzonePost,
     accountId: string,
     content: string,
-    parentId: string | null,
+    replyTo: CommentReference | null,
+    threadRoot: CommentReference | null,
+    receiptId: string | null,
     earliestAllowed: number,
     latestAllowed: number
 ): readonly QzoneComment[] {
     return post.comments.filter((comment) => {
         if (
+            (receiptId !== null && comment.id !== receiptId) ||
             comment.author.id !== accountId ||
             comment.content !== content.trim() ||
-            comment.parentId !== parentId ||
             !comment.createdAt
         ) {
+            return false
+        }
+        if (replyTo) {
+            if (
+                comment.kind !== 'reply' ||
+                (threadRoot !== null &&
+                    (comment.threadRoot?.id !== threadRoot.id ||
+                        comment.threadRoot.authorId !== threadRoot.authorId))
+            ) {
+                return false
+            }
+        } else if (comment.kind !== 'comment') {
             return false
         }
         const createdAt = Date.parse(comment.createdAt)

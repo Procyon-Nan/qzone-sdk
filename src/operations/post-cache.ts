@@ -32,7 +32,21 @@ export class PostCache {
 
     setPage(page: ProtocolFeedPage): void {
         for (const post of page.items) {
-            this.set(post)
+            const current = this.get(post.authorId, post.id)
+            this.set(
+                current?.commentsComplete && !post.commentsComplete
+                    ? Object.freeze({
+                          ...post,
+                          commentCount: Math.max(
+                              post.commentCount,
+                              current.commentCount
+                          ),
+                          comments: current.comments,
+                          commentsComplete: true,
+                          commentSnapshotPresent: current.commentSnapshotPresent
+                      })
+                    : post
+            )
         }
     }
 

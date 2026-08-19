@@ -1,11 +1,10 @@
 import type { QzoneId } from '../types.js'
-import { parseComments } from './comment.js'
+import { parseCommentSnapshot } from './comment.js'
 import { extractCreatedAt } from './time.js'
 import type { ProtocolPost } from './types.js'
 import { parseMedia } from './media.js'
 import {
     asRecord,
-    asRecords,
     firstRecord,
     firstValue,
     type ProtocolRecord,
@@ -39,7 +38,8 @@ const DETAIL_CONTAINER_KEYS = [
 
 export function parseProtocolPost(
     value: unknown,
-    defaultAuthorId: QzoneId = ''
+    defaultAuthorId: QzoneId = '',
+    source: 'feed' | 'detail' = 'feed'
 ): ProtocolPost {
     const raw = asRecord(value) ?? {}
     const common =
@@ -62,12 +62,13 @@ export function parseProtocolPost(
         toInteger(extractMarkupAttribute(raw, 'data-appid')) ||
         311
     const createdAt = extractCreatedAt(raw)
-    const comments = parseComments(raw)
+    const commentSnapshot = parseCommentSnapshot(raw)
+    const comments = commentSnapshot.items
     const commentCount = Math.max(
         toInteger(firstValue(comment, ['num', 'commentcount'])),
         toInteger(firstValue(raw, ['cmtnum', 'commentnum'])),
-        asRecords(raw.commentlist).length,
-        comments.length
+        commentSnapshot.reportedCount ?? 0,
+        commentSnapshot.rootCount
     )
     const markupLikeCount = extractMarkupAttribute(raw, 'data-likecnt')
     const markupLiked = extractMarkupAttribute(raw, 'data-islike')
@@ -97,6 +98,8 @@ export function parseProtocolPost(
         ),
         media: parseMedia(raw, { postId: id, authorId }),
         comments,
+        commentsComplete: source === 'detail' && commentSnapshot.complete,
+        commentSnapshotPresent: commentSnapshot.present,
         action: Object.freeze({
             appId,
             currentLikeKey:
@@ -121,7 +124,7 @@ export function mergeProtocolPost(
     detail: unknown
 ): ProtocolPost {
     const raw = asRecord(detail) ?? {}
-    const detailPost = parseProtocolPost(raw, listPost.authorId)
+    const detailPost = parseProtocolPost(raw, listPost.authorId, 'detail')
     const detailMedia = parseMedia(raw, {
         postId: listPost.id,
         authorId: listPost.authorId
@@ -149,6 +152,9 @@ export function mergeProtocolPost(
             ? detailPost.action.businessParameters
             : listPost.action.businessParameters
     })
+    const useDetailComments =
+        detailPost.commentsComplete ||
+        (detailPost.commentSnapshotPresent && detailPost.comments.length > 0)
     return Object.freeze({
         ...listPost,
         authorNickname: detailPost.authorNickname || listPost.authorNickname,
@@ -163,13 +169,16 @@ export function mergeProtocolPost(
         likeCount: hasLikeCount(raw)
             ? detailPost.likeCount
             : listPost.likeCount,
-        commentCount: Math.max(detailPost.commentCount, listPost.commentCount),
+        commentCount: detailPost.commentsComplete
+            ? detailPost.commentCount
+            : Math.max(detailPost.commentCount, listPost.commentCount),
         liked: hasLiked(raw) ? detailPost.liked : listPost.liked,
         media: detailMedia.length > 0 ? detailMedia : listPost.media,
-        comments:
-            detailPost.comments.length > 0
-                ? detailPost.comments
-                : listPost.comments,
+        comments: useDetailComments ? detailPost.comments : listPost.comments,
+        commentsComplete: detailPost.commentsComplete,
+        commentSnapshotPresent:
+            detailPost.commentSnapshotPresent ||
+            listPost.commentSnapshotPresent,
         action
     })
 }

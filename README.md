@@ -170,6 +170,19 @@ const liked = await client.like({ post })
 const unliked = await client.unlike({ post })
 ```
 
+`getPost()` 只执行一次动态详情读取，不提供评论分页。`commentsComplete` 仅在该次
+详情响应同时满足一级评论总数以及每条一级评论的回复数时为 `true`；Feed 评论预览、
+计数缺失或任一回复计数不符时均为 `false`。`commentCount` 只表示一级评论数，
+`comments` 则按响应顺序同时包含一级评论和嵌套回复。
+
+每个 `QzoneComment` 都可直接传给 `reply()`。`kind` 区分一级评论与回复；
+`threadRoot` 使用 `{ id, authorId }` 标识回复所属的一级评论；`parentId` 仅保留协议
+或容器提供的结构父节点。`replyTo` 只在协议能够明确给出实际目标的完整引用时设置，
+不能仅凭位于某个 `replyList` / `list_3` 容器中推断。因此当前 legacy 详情中的回复
+通常为 `replyTo: null`。QQ 空间还可能让一级评论与回复具有相同的 `id + authorId`。
+`reply()` 依照底层协议发送这两个字段并继续该评论线程，但 SDK 不会把读回的结构
+伪装成已确认的二级回复关系。调用方不能把 `parentId` 当作精确目标的协议依据。
+
 互动内容不能为空，最终写请求不会自动重试。点赞前会读取当前状态；若已经是
 目标状态，返回 `already-applied`。写入后 SDK 会进行有限次数的只读验证，
 显示同步尚未完成时返回 `accepted`，请求发送后无法确认时返回 `unknown`。

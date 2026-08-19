@@ -91,6 +91,7 @@ export class FeedOperations {
 
             const fetched = await this.#fetchPage(position, context)
             position = fetched.position
+            this.#cache.setPage(fetched.page)
             const actualPageKey = pageKey(position)
             if (
                 actualPageKey !== requestedPageKey &&
@@ -108,7 +109,6 @@ export class FeedOperations {
                     return false
                 }
                 seenItems.add(identity)
-                this.#cache.set(post)
                 return true
             })
             const nextPosition = nextBackendPosition(position, fetched.page)
@@ -281,9 +281,7 @@ export class FeedOperations {
     }
 
     async #profile(context: FeedRequestContext): Promise<ProtocolFeedPage> {
-        const page = await this.#read.profile(context.targetId, context.signal)
-        this.#cache.setPage(page)
-        return page
+        return this.#read.profile(context.targetId, context.signal)
     }
 }
 

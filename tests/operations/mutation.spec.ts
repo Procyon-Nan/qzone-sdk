@@ -85,7 +85,7 @@ describe('social mutation operations', () => {
         })
     })
 
-    it('replies with the comment identity and verifies the nested reply', async () => {
+    it('replies with the comment identity without treating nesting as proof', async () => {
         const now = epochSeconds()
         const parent = comment('parent', '30003', '原评论', now)
         const fake = createFakeFetch([
@@ -120,8 +120,105 @@ describe('social mutation operations', () => {
 
         expect(result).toMatchObject({
             outcome: 'verified',
-            comment: { id: 'reply-new', parentId: 'parent' }
+            comment: {
+                id: 'reply-new',
+                author: { id: '10001' },
+                kind: 'reply',
+                threadRoot: { id: 'parent', authorId: '30003' },
+                replyTo: null
+            }
         })
+    })
+
+    it('matches reply targets by both ID and author across layer collisions', async () => {
+        const now = epochSeconds()
+        const root = {
+            ...comment('shared', '30003', 'root', now),
+            replynum: 1,
+            list_3: [comment('shared', '40004', 'nested', now)]
+        }
+        const stale = detail(post({ time: now, comments: [root] }))
+        const fake = createFakeFetch([
+            stale,
+            async (request) => {
+                const form = new URLSearchParams(await request.text())
+                expect(form.get('commentId')).toBe('shared')
+                expect(form.get('commentUin')).toBe('40004')
+                return jsonResponse({ data: { commentId: 'nested-reply' } })
+            },
+            stale,
+            stale,
+            stale
+        ])
+
+        const result = await createClient(fake.fetch).reply({
+            post: reference(),
+            comment: { id: 'shared', authorId: '40004' },
+            content: 'reply to nested'
+        })
+
+        expect(result).toEqual({
+            outcome: 'accepted',
+            reference: { id: 'nested-reply', authorId: '10001' }
+        })
+    })
+
+    it('continues the thread when QQ reuses an ID and author across layers', async () => {
+        const now = epochSeconds()
+        const root = {
+            ...comment('shared', '30003', 'root', now),
+            replynum: 1,
+            list_3: [comment('shared', '30003', 'reply', now)]
+        }
+        const fake = createFakeFetch([
+            detail(post({ time: now, comments: [root] })),
+            async (request) => {
+                const form = new URLSearchParams(await request.text())
+                expect(form.get('commentId')).toBe('shared')
+                expect(form.get('commentUin')).toBe('30003')
+                return jsonResponse({ data: { commentId: 'reply-new' } })
+            },
+            detail(
+                post({
+                    time: now,
+                    comments: [
+                        {
+                            ...root,
+                            replynum: 2,
+                            list_3: [
+                                ...root.list_3,
+                                comment(
+                                    'reply-new',
+                                    '10001',
+                                    'continue thread',
+                                    now
+                                )
+                            ]
+                        }
+                    ]
+                })
+            )
+        ])
+
+        const result = await createClient(fake.fetch).reply({
+            post: reference(),
+            comment: { id: 'shared', authorId: '30003' },
+            content: 'continue thread'
+        })
+
+        expect(result).toMatchObject({
+            outcome: 'verified',
+            comment: {
+                id: 'reply-new',
+                author: { id: '10001' },
+                kind: 'reply',
+                threadRoot: { id: 'shared', authorId: '30003' },
+                replyTo: null
+            }
+        })
+        expect(
+            fake.calls.filter((request) => request.method === 'POST')
+        ).toHaveLength(1)
     })
 
     it('rejects empty comments and invalid reply references before writing', async () => {

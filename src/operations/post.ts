@@ -138,7 +138,9 @@ function protocolPostFromTarget(
         commentCount: post.commentCount,
         liked: post.liked,
         media: Object.freeze([...post.media]),
-        comments: Object.freeze([...post.comments])
+        comments: Object.freeze([...post.comments]),
+        commentsComplete: post.commentsComplete,
+        commentSnapshotPresent: true
     })
 }
 

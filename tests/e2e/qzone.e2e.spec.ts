@@ -162,7 +162,9 @@ async function runScenario(
         (post) => ({
             postId: post.id,
             authorId: post.authorId,
-            commentCount: post.comments.length,
+            commentCount: post.commentCount,
+            commentNodeCount: post.comments.length,
+            commentsComplete: post.commentsComplete,
             mediaCount: post.media.length
         })
     )
@@ -220,18 +222,87 @@ async function runScenario(
     )
     const commentReference = commentTarget(comment)!
 
-    await evidence.step(
+    const replyContent = `[qzone-sdk-e2e:${runId}:reply]`
+    const reply = await evidence.step(
         'post.reply',
         async () => {
             const result = await client.reply({
                 post: textPost.target!,
                 comment: commentReference,
-                content: `[qzone-sdk-e2e:${runId}:reply]`
+                content: replyContent
             })
             expect(result.outcome).toBe('verified')
+            expect(commentTarget(result)).toBeDefined()
             return result
         },
         summarizeCommentMutation
+    )
+    const replyReference = commentTarget(reply)!
+
+    const nestedReplyContent = `[qzone-sdk-e2e:${runId}:nested-reply]`
+    const ambiguousNestedTarget =
+        replyReference.id === commentReference.id &&
+        replyReference.authorId === commentReference.authorId
+    const nestedReply = await evidence.step(
+        'post.reply.nested',
+        async () => {
+            const result = await client.reply({
+                post: textPost.target!,
+                comment: replyReference,
+                content: nestedReplyContent
+            })
+            expect(result.outcome).toBe('verified')
+            expect(commentTarget(result)).toBeDefined()
+            return result
+        },
+        summarizeCommentMutation
+    )
+    const nestedReplyReference = commentTarget(nestedReply)!
+
+    await evidence.step(
+        'post.reply.nested.read',
+        async () => {
+            const detail = await client.getPost({ post: textPost.target! })
+            const root = detail.comments.find(
+                (item) =>
+                    item.kind === 'comment' &&
+                    item.id === commentReference.id &&
+                    item.author.id === commentReference.authorId
+            )
+            const firstReply = detail.comments.find(
+                (item) =>
+                    item.kind === 'reply' &&
+                    item.id === replyReference.id &&
+                    item.author.id === replyReference.authorId &&
+                    item.content === replyContent
+            )
+            const secondReply = detail.comments.find(
+                (item) =>
+                    item.kind === 'reply' &&
+                    item.id === nestedReplyReference.id &&
+                    item.author.id === nestedReplyReference.authorId &&
+                    item.content === nestedReplyContent
+            )
+            expect(root?.kind).toBe('comment')
+            expect(firstReply).toMatchObject({
+                kind: 'reply',
+                threadRoot: commentReference
+            })
+            expect(secondReply).toMatchObject({
+                kind: 'reply',
+                threadRoot: commentReference
+            })
+            return { detail, root, firstReply, secondReply }
+        },
+        ({ detail, root, firstReply, secondReply }) => ({
+            commentsComplete: detail.commentsComplete,
+            rootFound: root !== undefined,
+            firstReplyFound: firstReply !== undefined,
+            ambiguousNestedTarget,
+            nestedReplyFound: secondReply !== undefined,
+            firstReplyTargetKnown: Boolean(firstReply?.replyTo),
+            nestedReplyTargetKnown: Boolean(secondReply?.replyTo)
+        })
     )
 
     await evidence.step(

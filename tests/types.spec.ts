@@ -5,6 +5,8 @@ import type {
     MutationOutcome,
     PublishPostOptions,
     QzoneErrorOptions,
+    QzoneComment,
+    QzoneCommentKind,
     QzoneMedia,
     QzonePost,
     QzoneSession,
@@ -36,6 +38,19 @@ describe('public type contracts', () => {
         expectTypeOf<QzonePost['authorId']>().toEqualTypeOf<string>()
         expectTypeOf<QzoneTimestamp>().toEqualTypeOf<string>()
         expectTypeOf<QzonePost['createdAt']>().toEqualTypeOf<string | null>()
+    })
+
+    it('models comment relationships and snapshot completeness explicitly', () => {
+        expectTypeOf<QzoneCommentKind>().toEqualTypeOf<'comment' | 'reply'>()
+        expectTypeOf<QzoneComment['threadRoot']>().toEqualTypeOf<{
+            readonly id: string
+            readonly authorId: string
+        } | null>()
+        expectTypeOf<QzoneComment['replyTo']>().toEqualTypeOf<{
+            readonly id: string
+            readonly authorId: string
+        } | null>()
+        expectTypeOf<QzonePost['commentsComplete']>().toEqualTypeOf<boolean>()
     })
 
     it('limits mutation outcomes to the approved states', () => {

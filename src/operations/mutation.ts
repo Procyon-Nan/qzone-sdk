@@ -49,7 +49,7 @@ export class MutationOperations {
     async comment(options: CommentOptions): Promise<CommentMutationResult> {
         const { post, content, signal } = normalizeCommentOptions(options)
         const target = await resolveMutationPost(this.#references, post, signal)
-        return this.#writeComment(target, post, content, null, signal)
+        return this.#writeComment(target, post, content, null, null, signal)
     }
 
     async reply(options: ReplyOptions): Promise<CommentMutationResult> {
@@ -59,25 +59,34 @@ export class MutationOperations {
         let target =
             cached ??
             (await resolveMutationPost(this.#references, post, signal))
-        const existing = target.comments.find((item) => item.id === comment.id)
-        if (existing && existing.author.id !== comment.authorId) {
-            throw new QzoneValidationError('目标评论作者与评论引用不一致')
-        }
-        if (!existing && cached) {
+        let matches = findComments(target.comments, comment)
+        if (matches.length === 0 && cached) {
             target = await resolveMutationPost(
                 this.#references,
                 post,
                 signal,
                 true
             )
-            const refreshed = target.comments.find(
-                (item) => item.id === comment.id
-            )
-            if (refreshed && refreshed.author.id !== comment.authorId) {
-                throw new QzoneValidationError('目标评论作者与评论引用不一致')
-            }
+            matches = findComments(target.comments, comment)
         }
-        return this.#writeComment(target, post, content, comment, signal)
+        if (
+            matches.length === 0 &&
+            target.comments.some((item) => item.id === comment.id)
+        ) {
+            throw new QzoneValidationError('目标评论作者与评论引用不一致')
+        }
+        const threadRoot =
+            matches.length === 1
+                ? commentThreadRoot(matches[0]!, comment)
+                : null
+        return this.#writeComment(
+            target,
+            post,
+            content,
+            comment,
+            threadRoot,
+            signal
+        )
     }
 
     like(options: LikeOptions): Promise<LikeMutationResult> {
@@ -153,6 +162,7 @@ export class MutationOperations {
         post: PostTarget,
         content: string,
         replyTo: CommentReference | null,
+        threadRoot: CommentReference | null,
         signal?: AbortSignal
     ): Promise<CommentMutationResult> {
         const sentAt = Date.now()
@@ -178,6 +188,7 @@ export class MutationOperations {
             post,
             content,
             replyTo,
+            threadRoot,
             receipt?.id ?? null,
             sentAt
         )
@@ -235,6 +246,24 @@ export class MutationOperations {
             ? likeMutationResult('verified', liked, receipt?.message, verified)
             : likeMutationResult(fallback, liked, receipt?.message)
     }
+}
+
+function findComments(
+    comments: readonly QzoneComment[],
+    reference: CommentReference
+): readonly QzoneComment[] {
+    return comments.filter(
+        (comment) =>
+            comment.id === reference.id &&
+            comment.author.id === reference.authorId
+    )
+}
+
+function commentThreadRoot(
+    comment: QzoneComment,
+    reference: CommentReference
+): CommentReference | null {
+    return comment.kind === 'comment' ? reference : comment.threadRoot
 }
 
 function normalizeCommentOptions(options: CommentOptions): {
