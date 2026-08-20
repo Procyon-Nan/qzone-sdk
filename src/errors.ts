@@ -3,6 +3,7 @@ export type QzoneErrorCode =
     | 'QZONE_VALIDATION'
     | 'QZONE_AUTH'
     | 'QZONE_REQUEST'
+    | 'QZONE_NOT_FOUND'
     | 'QZONE_RATE_LIMIT'
     | 'QZONE_PERMISSION'
     | 'QZONE_PARSE'
@@ -61,6 +62,11 @@ export class QzoneRequestError extends QzoneError {
     constructor(message: string, options?: QzoneErrorOptions) {
         super(message, 'QZONE_REQUEST', options)
     }
+}
+
+/** 目标资源被 QQ 空间协议明确报告为不存在。 */
+export class QzoneNotFoundError extends QzoneRequestError {
+    override readonly code = 'QZONE_NOT_FOUND' as const
 }
 
 /** QQ 空间服务端触发频率限制。 */

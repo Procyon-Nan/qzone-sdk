@@ -1,4 +1,9 @@
-import { QzoneParseError, QzoneValidationError } from '../errors.js'
+import {
+    QzoneNotFoundError,
+    QzoneParseError,
+    QzoneRequestError,
+    QzoneValidationError
+} from '../errors.js'
 import {
     findPostDetail,
     mergeProtocolPost,
@@ -50,12 +55,7 @@ export class PostOperations {
 
         if (base.action.appId === 311) {
             try {
-                const detail = await this.#read.legacyDetail(
-                    target.authorId,
-                    target.id,
-                    signal
-                )
-                record = requirePostDetail(detail, target)
+                record = await this.#legacyDetail(target, signal)
             } catch (error) {
                 if (!shouldFallbackRead(error)) {
                     throw error
@@ -76,6 +76,22 @@ export class PostOperations {
         this.#cache.delete(target.authorId, target.id)
     }
 
+    async #legacyDetail(
+        target: { readonly id: QzoneId; readonly authorId: QzoneId },
+        signal?: AbortSignal
+    ): Promise<NonNullable<ReturnType<typeof findPostDetail>>> {
+        try {
+            const detail = await this.#read.legacyDetail(
+                target.authorId,
+                target.id,
+                signal
+            )
+            return requirePostDetail(detail, target)
+        } catch (error) {
+            throw this.#mapDetailError(error, target)
+        }
+    }
+
     async #h5Detail(
         post: ProtocolPost,
         target: { readonly id: QzoneId; readonly authorId: QzoneId },
@@ -85,9 +101,42 @@ export class PostOperations {
         if (tokenPage) {
             this.#cache.setPage(tokenPage)
         }
-        const detail = await this.#read.h5Detail(post, signal)
-        return requirePostDetail(detail, target)
+        try {
+            const detail = await this.#read.h5Detail(post, signal)
+            return requirePostDetail(detail, target)
+        } catch (error) {
+            throw this.#mapDetailError(error, target)
+        }
     }
+
+    #mapDetailError(
+        error: unknown,
+        target: { readonly id: QzoneId; readonly authorId: QzoneId }
+    ): unknown {
+        if (!isNotFoundResponse(error)) {
+            return error
+        }
+        this.#cache.delete(target.authorId, target.id)
+        const { endpoint, statusCode, serviceCode, retryCount } =
+            error.context ?? {}
+        return new QzoneNotFoundError('QQ 空间动态不存在', {
+            cause: error,
+            context: {
+                operation: 'post.detail',
+                endpoint,
+                statusCode,
+                serviceCode,
+                retryCount
+            }
+        })
+    }
+}
+
+function isNotFoundResponse(error: unknown): error is QzoneRequestError {
+    return (
+        error instanceof QzoneRequestError &&
+        (error.context?.statusCode === 404 || error.context?.serviceCode === -8)
+    )
 }
 
 function normalizePostTarget(post: PostTarget): {

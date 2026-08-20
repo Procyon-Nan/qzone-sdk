@@ -117,6 +117,10 @@ const detail = post ? await client.getPost({ post }) : null
 中继续使用。动态详情会优先复用同一实例中的列表缓存补全缺失字段，但公共
 结果不会暴露 QQ 空间内部动作参数。
 
+`getPost()` 仅在动态详情协议通过 HTTP 404 或 QQ 业务码 `-8` 明确报告目标
+不存在时抛出 `QzoneNotFoundError`。该错误不推断动态由谁删除或为何不可访问；
+成功响应中缺少目标动态仍属于 `QzoneParseError`。
+
 ## 发布动态
 
 `publishPost()` 支持纯文字、纯图片或图文动态。图片输入只接受内存中的
@@ -227,6 +231,7 @@ const deleted = await client.deleteOwnPost({ post })
 | `QzoneValidationError` | `QZONE_VALIDATION` | 参数、本地数据或操作前置条件无效       |
 | `QzoneAuthError`       | `QZONE_AUTH`       | Session 缺失、失效或被登录流程拒绝     |
 | `QzoneRequestError`    | `QZONE_REQUEST`    | 网络、HTTP 或 Session 持久化链路失败   |
+| `QzoneNotFoundError`   | `QZONE_NOT_FOUND`  | 动态详情协议明确报告目标不存在         |
 | `QzoneRateLimitError`  | `QZONE_RATE_LIMIT` | QQ 空间服务端触发频率限制              |
 | `QzonePermissionError` | `QZONE_PERMISSION` | 当前账号无权读取或操作目标             |
 | `QzoneParseError`      | `QZONE_PARSE`      | 响应不符合 SDK 支持的协议格式          |
@@ -237,13 +242,16 @@ import {
     QzoneAuthError,
     QzoneCancelledError,
     QzoneError,
+    QzoneNotFoundError,
     QzoneRateLimitError
 } from 'qzone-sdk'
 
 try {
-    await client.listFeeds({ scope: 'self' })
+    await client.getPost({ post })
 } catch (error) {
-    if (error instanceof QzoneAuthError) {
+    if (error instanceof QzoneNotFoundError) {
+        // 停止监控该动态；无需读取底层 HTTP 状态或 QQ 业务码。
+    } else if (error instanceof QzoneAuthError) {
         // 重新取得 Session 后创建新客户端或更新同账号 Session。
     } else if (error instanceof QzoneRateLimitError) {
         // 按业务策略延后读取，不要立即循环重试。
@@ -331,10 +339,11 @@ yarn test:e2e
 登录态；指定用户 ID 可省略，此时测试优先从好友动态中选择其他用户，找不到时
 读取当前账号的 profile。
 
-每次运行的步骤、SDK 日志、请求、原始响应、最终 Session 和清理结果保存在
-`tmp/e2e/<run-id>/`。该目录被 Git 忽略；其中包含未处理的真实响应和登录态，
-仅用于本地诊断。写请求返回 `unknown` 或删除结果未经确认时，测试不会直接重复
-写入，而会停止并在证据中记录需要人工处理的目标。
+每次运行的步骤、SDK 日志、脱敏请求摘要、脱敏 Session 摘要和清理结果保存在
+`tmp/e2e/<run-id>/`。该目录被 Git 忽略，产物不包含 Cookie、Token、QQ 账号、
+完整请求 URL 或请求与响应正文；原始 Session 文件仍须由执行者自行安全保管。
+写请求返回 `unknown` 或删除结果未经确认时，测试不会直接重复写入，而会停止并在
+证据中记录需要人工处理的目标。
 
 ## 许可证
 

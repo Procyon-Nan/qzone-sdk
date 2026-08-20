@@ -83,6 +83,7 @@ qzone-sdk/
 ├── tests/
 │   ├── e2e/
 │   │   ├── harness.ts      # 真实 E2E 配置、证据记录与内存图片
+│   │   ├── harness.spec.ts # 真实 E2E 证据脱敏与错误摘要测试
 │   │   └── qzone.e2e.spec.ts # 专用账号全能力顺序验收与安全清理
 │   ├── internal/
 │   │   ├── cursor.spec.ts  # 游标实例及请求上下文隔离测试

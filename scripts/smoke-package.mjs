@@ -30,6 +30,7 @@ const publicRuntimeExports = [
     'QzoneCancelledError',
     'QzoneClient',
     'QzoneError',
+    'QzoneNotFoundError',
     'QzoneParseError',
     'QzonePermissionError',
     'QzoneRateLimitError',
@@ -116,11 +117,13 @@ function verifyPublishedPackage() {
 
 function verifyTypeImports(consumerRoot) {
     const source = [
-        "import { QzoneClient, QzoneValidationError } from 'qzone-sdk'",
+        "import { QzoneClient, QzoneNotFoundError, QzoneValidationError } from 'qzone-sdk'",
         "import type { QzoneClientOptions, QzoneErrorCode } from 'qzone-sdk'",
         "const code: QzoneErrorCode = new QzoneValidationError('invalid').code",
+        "const notFoundCode: QzoneErrorCode = new QzoneNotFoundError('missing').code",
         'const create = (options: QzoneClientOptions) => new QzoneClient(options)',
         'void code',
+        'void notFoundCode',
         'void create'
     ].join('\n')
     const esmTypePath = join(consumerRoot, 'esm-smoke.mts')
@@ -184,6 +187,9 @@ function runtimeAssertionSource(moduleKind) {
         `const expected = ${JSON.stringify(publicRuntimeExports)}`,
         'assert.deepEqual(Object.keys(sdk).sort(), expected.sort())',
         "assert.equal(new sdk.QzoneValidationError('invalid').code, 'QZONE_VALIDATION')",
+        "const notFound = new sdk.QzoneNotFoundError('missing')",
+        "assert.equal(notFound.code, 'QZONE_NOT_FOUND')",
+        'assert.ok(notFound instanceof sdk.QzoneRequestError)',
         "assert.equal(typeof sdk.QzoneClient, 'function')"
     ].join('\n')
 }

@@ -3,6 +3,7 @@ export {
     QzoneAuthError,
     QzoneCancelledError,
     QzoneError,
+    QzoneNotFoundError,
     QzoneParseError,
     QzonePermissionError,
     QzoneRateLimitError,

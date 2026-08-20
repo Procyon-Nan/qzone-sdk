@@ -2,7 +2,11 @@ import { randomUUID } from 'node:crypto'
 
 import { describe, expect, it } from 'vitest'
 
-import { QzoneClient, QzoneValidationError } from '../../src/index.js'
+import {
+    QzoneClient,
+    QzoneNotFoundError,
+    QzoneValidationError
+} from '../../src/index.js'
 import type {
     CommentMutationResult,
     CommentReference,
@@ -15,7 +19,8 @@ import {
     createBmpImage,
     E2eEvidence,
     e2eEnabled,
-    loadE2eConfig
+    loadE2eConfig,
+    serializeError
 } from './harness.js'
 
 interface CreatedPost {
@@ -66,7 +71,7 @@ describe.skipIf(!e2eEnabled())('Qzone real E2E', () => {
             await evidence.saveSession(client.exportSession())
         } catch (error) {
             await evidence.note('session.export.final', {
-                error: error instanceof Error ? error.message : String(error)
+                error: serializeError(error)
             })
         }
         await client.close()
@@ -102,8 +107,8 @@ async function runScenario(
             return info
         },
         (info) => ({
-            accountId: info.accountId,
-            authenticated: info.authenticated
+            authenticated: info.authenticated,
+            accountIdValidated: info.accountId !== null
         })
     )
     const accountId = sessionInfo.accountId!
@@ -160,8 +165,7 @@ async function runScenario(
             return detail
         },
         (post) => ({
-            postId: post.id,
-            authorId: post.authorId,
+            targetMatched: true,
             commentCount: post.commentCount,
             commentNodeCount: post.comments.length,
             commentsComplete: post.commentsComplete,
@@ -304,7 +308,8 @@ async function runScenario(
             nestedReplyFound: secondReply !== undefined,
             firstReplyTargetKnown: Boolean(firstReply?.replyTo),
             nestedReplyTargetKnown: Boolean(secondReply?.replyTo),
-            nestedReplyTargetUser: secondReply?.replyToUser?.id ?? null
+            nestedReplyTargetUserMatched:
+                secondReply?.replyToUser?.id === replyTarget.author.id
         })
     )
 
@@ -403,6 +408,30 @@ async function deleteTrackedPost(
         },
         summarizePostMutation
     )
+    await evidence.step(
+        `${stepName}.not-found`,
+        async () => {
+            let failure: unknown
+            try {
+                await client.getPost({ post: post.target! })
+            } catch (error) {
+                failure = error
+            }
+            expect(failure).toBeInstanceOf(QzoneNotFoundError)
+            const error = failure as QzoneNotFoundError
+            return {
+                name: error.name,
+                code: error.code,
+                context: {
+                    operation: error.context?.operation,
+                    endpoint: error.context?.endpoint,
+                    statusCode: error.context?.statusCode,
+                    serviceCode: error.context?.serviceCode
+                }
+            }
+        },
+        (result) => result
+    )
 }
 
 async function cleanupCreatedPosts(
@@ -456,7 +485,6 @@ async function cleanupCreatedPosts(
             post.deleted = true
             await evidence.note('cleanup.deleted', {
                 marker: post.marker,
-                postId: confirmed.id,
                 outcome: result.outcome
             })
         } catch (error) {
@@ -464,7 +492,7 @@ async function cleanupCreatedPosts(
             problems.push(message)
             await evidence.note('cleanup.failed', {
                 marker: post.marker,
-                message
+                error: serializeError(error)
             })
         }
     }
@@ -536,7 +564,7 @@ function summarizePostMutation(
 ): Record<string, unknown> {
     return {
         outcome: result.outcome,
-        postId: result.post?.id ?? result.reference?.id ?? null
+        targetAvailable: Boolean(result.post ?? result.reference)
     }
 }
 
@@ -545,6 +573,6 @@ function summarizeCommentMutation(
 ): Record<string, unknown> {
     return {
         outcome: result.outcome,
-        commentId: result.comment?.id ?? result.reference?.id ?? null
+        targetAvailable: Boolean(result.comment ?? result.reference)
     }
 }

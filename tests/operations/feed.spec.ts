@@ -1,8 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+    QzoneAuthError,
+    QzoneCancelledError,
     QzoneClient,
+    QzoneNotFoundError,
     QzoneParseError,
+    QzoneRequestError,
     QzoneValidationError
 } from '../../src/index.js'
 import { createFakeFetch } from '../support/fake-fetch.js'
@@ -346,6 +350,185 @@ describe('Feed operations', () => {
 
         expect(detail.content).toBe('自己的详情')
         expect(fake.calls).toHaveLength(3)
+    })
+
+    it.each([
+        ['HTTP 404', textResponse('missing', { status: 404 }), 'statusCode'],
+        [
+            'service code -8',
+            jsonResponse({ code: -8, message: 'missing' }),
+            'serviceCode'
+        ]
+    ] as const)(
+        'maps a legacy detail %s to QzoneNotFoundError',
+        async (_label, response, contextKey) => {
+            const fake = createFakeFetch([response])
+
+            let failure: unknown
+            try {
+                await createClient(fake.fetch).getPost({
+                    post: { id: 'target', authorId: '10002' }
+                })
+            } catch (error) {
+                failure = error
+            }
+
+            expect(failure).toBeInstanceOf(QzoneNotFoundError)
+            expect(failure).toBeInstanceOf(QzoneRequestError)
+            expect(failure).toMatchObject({
+                code: 'QZONE_NOT_FOUND',
+                context: {
+                    operation: 'post.detail',
+                    [contextKey]: contextKey === 'statusCode' ? 404 : -8
+                },
+                cause: expect.any(QzoneRequestError)
+            })
+            expect((failure as QzoneNotFoundError).context).not.toHaveProperty(
+                'responseSnippet'
+            )
+        }
+    )
+
+    it.each([
+        ['HTTP 404', textResponse('missing', { status: 404 }), 'statusCode'],
+        [
+            'service code -8',
+            jsonResponse({ code: -8, message: 'missing' }),
+            'serviceCode'
+        ]
+    ] as const)(
+        'maps an H5 detail %s to QzoneNotFoundError',
+        async (_label, response, contextKey) => {
+            const fake = createFakeFetch([
+                textResponse(
+                    profileHtml(
+                        feedPage([{ ...post('target', '10002'), appid: 202 }])
+                    )
+                ),
+                response
+            ])
+            const client = createClient(fake.fetch)
+            const listed = await client.listFeeds({
+                scope: 'profile',
+                userId: '10002',
+                limit: 1
+            })
+
+            await expect(
+                client.getPost({ post: listed.items[0]! })
+            ).rejects.toMatchObject({
+                code: 'QZONE_NOT_FOUND',
+                context: {
+                    operation: 'post.detail',
+                    [contextKey]: contextKey === 'statusCode' ? 404 : -8
+                }
+            })
+        }
+    )
+
+    it('does not map a token-page HTTP 404 to post not found', async () => {
+        const fake = createFakeFetch([
+            textResponse('forbidden', { status: 403 }),
+            textResponse('missing profile', { status: 404 })
+        ])
+
+        let failure: unknown
+        try {
+            await createClient(fake.fetch).getPost({
+                post: { id: 'target', authorId: '10002' }
+            })
+        } catch (error) {
+            failure = error
+        }
+
+        expect(failure).toBeInstanceOf(QzoneRequestError)
+        expect(failure).not.toBeInstanceOf(QzoneNotFoundError)
+        expect(failure).toMatchObject({ context: { statusCode: 404 } })
+    })
+
+    it('does not map authentication or cancellation failures to post not found', async () => {
+        const auth = createFakeFetch([
+            textResponse('unauthorized', { status: 401 })
+        ])
+        await expect(
+            createClient(auth.fetch).getPost({
+                post: { id: 'target', authorId: '10002' }
+            })
+        ).rejects.toBeInstanceOf(QzoneAuthError)
+
+        const controller = new AbortController()
+        controller.abort()
+        const cancelled = createFakeFetch([])
+        await expect(
+            createClient(cancelled.fetch).getPost({
+                post: { id: 'target', authorId: '10002' },
+                signal: controller.signal
+            })
+        ).rejects.toBeInstanceOf(QzoneCancelledError)
+    })
+
+    it('does not map an H5 server failure to post not found', async () => {
+        const fake = createFakeFetch([
+            textResponse(
+                profileHtml(
+                    feedPage([{ ...post('target', '10002'), appid: 202 }])
+                )
+            ),
+            textResponse('unavailable', { status: 503 }),
+            textResponse('unavailable', { status: 503 }),
+            textResponse('unavailable', { status: 503 })
+        ])
+        const client = createClient(fake.fetch)
+        const listed = await client.listFeeds({
+            scope: 'profile',
+            userId: '10002',
+            limit: 1
+        })
+
+        let failure: unknown
+        try {
+            await client.getPost({ post: listed.items[0]! })
+        } catch (error) {
+            failure = error
+        }
+
+        expect(failure).toBeInstanceOf(QzoneRequestError)
+        expect(failure).not.toBeInstanceOf(QzoneNotFoundError)
+        expect(failure).toMatchObject({ context: { statusCode: 503 } })
+    })
+
+    it('clears a cached post after an explicit not-found response', async () => {
+        const fake = createFakeFetch([
+            textResponse(
+                profileHtml(
+                    feedPage([{ ...post('target', '10002'), appid: 202 }])
+                )
+            ),
+            textResponse('missing', { status: 404 }),
+            (request) => {
+                expect(request.url).toContain('/emotion_cgi_msgdetail_v6')
+                return textResponse('missing', { status: 404 })
+            },
+            textResponse(profileHtml(feedPage([])))
+        ])
+        const client = createClient(fake.fetch)
+        const listed = await client.listFeeds({
+            scope: 'profile',
+            userId: '10002',
+            limit: 1
+        })
+
+        await expect(
+            client.getPost({ post: listed.items[0]! })
+        ).rejects.toBeInstanceOf(QzoneNotFoundError)
+        await expect(
+            client.like({ post: { id: 'target', authorId: '10002' } })
+        ).rejects.toBeInstanceOf(QzoneNotFoundError)
+
+        expect(fake.calls).toHaveLength(4)
+        expect(
+            fake.calls.filter((request) => request.method === 'POST')
+        ).toHaveLength(0)
     })
 
     it('rejects invalid options and a detail response without the target', async () => {

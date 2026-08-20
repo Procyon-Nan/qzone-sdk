@@ -1,4 +1,4 @@
-import { QzoneRequestError } from '../errors.js'
+import { QzoneNotFoundError } from '../errors.js'
 import type { SessionState } from '../session/session.js'
 import type {
     CommentReference,
@@ -125,11 +125,7 @@ export async function verifyDeleted(
         try {
             await posts.getPost({ post })
         } catch (error) {
-            if (
-                error instanceof QzoneRequestError &&
-                (error.context?.statusCode === 404 ||
-                    error.context?.serviceCode === -8)
-            ) {
+            if (error instanceof QzoneNotFoundError) {
                 return true
             }
             return false

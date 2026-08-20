@@ -24,22 +24,27 @@ export class E2eEvidence {
     readonly logger: (event: QzoneLogEvent) => void
     readonly #stepsPath: string
     readonly #requestsPath: string
+    readonly #baseFetch: typeof globalThis.fetch
     readonly #logs: QzoneLogEvent[] = []
     #requestSequence = 0
     #writeTail: Promise<void> = Promise.resolve()
 
-    private constructor(directory: string) {
+    private constructor(directory: string, baseFetch: typeof globalThis.fetch) {
         this.directory = directory
+        this.#baseFetch = baseFetch
         this.#stepsPath = resolve(directory, 'steps.ndjson')
         this.#requestsPath = resolve(directory, 'requests.ndjson')
         this.fetch = this.#captureFetch.bind(this)
         this.logger = (event) => this.#logs.push(event)
     }
 
-    static async create(runId: string): Promise<E2eEvidence> {
+    static async create(
+        runId: string,
+        baseFetch: typeof globalThis.fetch = globalThis.fetch
+    ): Promise<E2eEvidence> {
         const directory = resolve('tmp', 'e2e', runId)
         await mkdir(directory, { recursive: true })
-        return new E2eEvidence(directory)
+        return new E2eEvidence(directory, baseFetch)
     }
 
     async step<T>(
@@ -83,7 +88,11 @@ export class E2eEvidence {
 
     async saveSession(session: QzoneSession): Promise<void> {
         await this.#write(() =>
-            writeJson(resolve(this.directory, 'session-final.json'), session)
+            writeJson(resolve(this.directory, 'session-summary.json'), {
+                updatedAt: session.updatedAt,
+                cookieCount: Object.keys(session.cookies).length,
+                tokenCount: Object.keys(session.tokens).length
+            })
         )
     }
 
@@ -108,32 +117,17 @@ export class E2eEvidence {
     ): Promise<Response> {
         const sequence = ++this.#requestSequence
         const request = new Request(input, init)
-        const requestBody =
-            request.method === 'GET' || request.method === 'HEAD'
-                ? null
-                : await request.clone().text()
         const startedAt = new Date().toISOString()
         const started = performance.now()
 
         try {
-            const response = await globalThis.fetch(request)
-            const responseBody = await response.clone().text()
+            const response = await this.#baseFetch(request)
             await this.#append(this.#requestsPath, {
                 sequence,
                 startedAt,
                 durationMs: Math.round(performance.now() - started),
-                request: {
-                    method: request.method,
-                    url: request.url,
-                    headers: Object.fromEntries(request.headers.entries()),
-                    body: requestBody
-                },
-                response: {
-                    status: response.status,
-                    url: response.url,
-                    headers: Object.fromEntries(response.headers.entries()),
-                    body: responseBody
-                }
+                method: request.method,
+                statusCode: response.status
             })
             return response
         } catch (error) {
@@ -141,12 +135,7 @@ export class E2eEvidence {
                 sequence,
                 startedAt,
                 durationMs: Math.round(performance.now() - started),
-                request: {
-                    method: request.method,
-                    url: request.url,
-                    headers: Object.fromEntries(request.headers.entries()),
-                    body: requestBody
-                },
+                method: request.method,
                 error: serializeError(error)
             })
             throw error
@@ -228,21 +217,41 @@ export function serializeError(
     error: unknown
 ): Readonly<Record<string, unknown>> {
     if (!(error instanceof Error)) {
-        return { name: 'UnknownError', message: String(error) }
+        return { name: 'UnknownError' }
     }
     const typed = error as Error & {
         readonly code?: unknown
         readonly context?: unknown
     }
+    const context = summarizeErrorContext(typed.context)
     return {
         name: error.name,
-        message: error.message,
         ...(typeof typed.code === 'string' ? { code: typed.code } : {}),
-        ...(typed.context && typeof typed.context === 'object'
-            ? { context: typed.context }
-            : {}),
-        ...(error.stack ? { stack: error.stack } : {})
+        ...(context ? { context } : {})
     }
+}
+
+function summarizeErrorContext(
+    value: unknown
+): Readonly<Record<string, string | number>> | undefined {
+    if (!value || typeof value !== 'object') {
+        return undefined
+    }
+    const context = value as Record<string, unknown>
+    const summary: Record<string, string | number> = {}
+    for (const key of [
+        'operation',
+        'endpoint',
+        'statusCode',
+        'serviceCode',
+        'retryCount'
+    ]) {
+        const item = context[key]
+        if (typeof item === 'string' || typeof item === 'number') {
+            summary[key] = item
+        }
+    }
+    return Object.keys(summary).length > 0 ? summary : undefined
 }
 
 function parseSession(value: string): QzoneSessionInput {

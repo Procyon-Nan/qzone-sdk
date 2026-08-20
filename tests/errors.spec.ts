@@ -4,6 +4,7 @@ import {
     QzoneAuthError,
     QzoneCancelledError,
     QzoneError,
+    QzoneNotFoundError,
     QzoneParseError,
     QzonePermissionError,
     QzoneRateLimitError,
@@ -23,6 +24,7 @@ const errorCases: ReadonlyArray<
     [QzoneValidationError, 'QZONE_VALIDATION'],
     [QzoneAuthError, 'QZONE_AUTH'],
     [QzoneRequestError, 'QZONE_REQUEST'],
+    [QzoneNotFoundError, 'QZONE_NOT_FOUND'],
     [QzoneRateLimitError, 'QZONE_RATE_LIMIT'],
     [QzonePermissionError, 'QZONE_PERMISSION'],
     [QzoneParseError, 'QZONE_PARSE'],
@@ -61,5 +63,23 @@ describe('Qzone errors', () => {
         expect(new QzoneCancelledError().message).toBe(
             'Qzone operation was cancelled'
         )
+    })
+
+    it('keeps not-found errors compatible with request-error handling', () => {
+        const cause = new QzoneRequestError('missing', {
+            context: { endpoint: 'post.detail.h5', serviceCode: -8 }
+        })
+        const error = new QzoneNotFoundError('post not found', {
+            cause,
+            context: { operation: 'post.detail', serviceCode: -8 }
+        })
+
+        expect(error).toBeInstanceOf(QzoneRequestError)
+        expect(error.cause).toBe(cause)
+        expect(error.context).toEqual({
+            operation: 'post.detail',
+            serviceCode: -8
+        })
+        expect(Object.isFrozen(error.context)).toBe(true)
     })
 })
