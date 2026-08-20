@@ -171,7 +171,7 @@ export class QzoneWriteApi {
                 ref: 'feeds',
                 content,
                 private: 0,
-                paramstr: 1,
+                paramstr: replyTo ? 2 : 1,
                 isSignIn: 0,
                 richval: '',
                 richtype: '',

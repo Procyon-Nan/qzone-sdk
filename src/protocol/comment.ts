@@ -1,4 +1,4 @@
-import type { CommentReference, QzoneComment } from '../types.js'
+import type { CommentReference, QzoneComment, QzoneUser } from '../types.js'
 import { htmlToText } from './html.js'
 import { extractCreatedAt } from './time.js'
 import {
@@ -39,6 +39,17 @@ const COMMENT_KEYS = [
 const ROOT_COUNT_KEYS = ['num', 'commentcount', 'total'] as const
 const RAW_ROOT_COUNT_KEYS = ['cmtnum', 'commentnum'] as const
 const REPLY_COUNT_KEYS = ['replynum', 'replyNum', 'reply_num'] as const
+const REPLY_DISPLAY_MARKERS = [
+    /^@\{uin:(\d+),nick:([^,{}:]*),auto:1\} ?([\s\S]*)$/u,
+    /^@\{uin:(\d+),nick:([^,{}:]*),who:1,auto:1\} ?([\s\S]*)$/u
+] as const
+const REPLY_NICKNAME_ESCAPES: Readonly<Record<string, string>> = {
+    '%25': '%',
+    '%2C': ',',
+    '%7D': '}',
+    '%7B': '{',
+    '%3A': ':'
+}
 
 export interface ProtocolCommentSnapshot {
     readonly items: readonly QzoneComment[]
@@ -61,6 +72,10 @@ interface CommentSources {
 
 export function parseComments(value: unknown): readonly QzoneComment[] {
     return parseCommentSnapshot(value).items
+}
+
+export function serializeReplyDisplayMarker(target: QzoneUser): string {
+    return `@{uin:${target.id},nick:${encodeReplyNickname(target.nickname)},auto:1}`
 }
 
 export function parseCommentSnapshot(value: unknown): ProtocolCommentSnapshot {
@@ -225,7 +240,7 @@ function parseComment(
         toText(firstValue(user, ['nickname', 'name', 'uinname'])) ||
             toText(firstValue(raw, ['nickname', 'name']))
     )
-    const content = htmlToText(
+    const rawContent = htmlToText(
         toText(
             firstValue(raw, [
                 'content',
@@ -235,6 +250,10 @@ function parseComment(
             ])
         )
     )
+    const { content, replyToUser } =
+        kind === 'reply'
+            ? parseReplyDisplayMarker(rawContent)
+            : { content: rawContent, replyToUser: null }
     const declaredParent = toText(
         firstValue(raw, ['parentId', 'parent_tid'])
     ).trim()
@@ -248,7 +267,43 @@ function parseComment(
         // Observed legacy list_3 replies do not expose a reliable target author.
         // A structural container must not be promoted to an actual reply target.
         replyTo: null,
+        replyToUser,
         kind
+    })
+}
+
+function parseReplyDisplayMarker(content: string): {
+    readonly content: string
+    readonly replyToUser: QzoneUser | null
+} {
+    for (const pattern of REPLY_DISPLAY_MARKERS) {
+        const match = pattern.exec(content)
+        if (!match) {
+            continue
+        }
+        return {
+            content: match[3] ?? '',
+            replyToUser: Object.freeze({
+                id: match[1]!,
+                nickname: decodeReplyNickname(match[2] ?? '')
+            })
+        }
+    }
+    return { content, replyToUser: null }
+}
+
+function encodeReplyNickname(value: string): string {
+    return value
+        .replace(/%/gu, '%25')
+        .replace(/,/gu, '%2C')
+        .replace(/\}/gu, '%7D')
+        .replace(/\{/gu, '%7B')
+        .replace(/:/gu, '%3A')
+}
+
+function decodeReplyNickname(value: string): string {
+    return value.replace(/%(?:25|2c|7d|7b|3a)/giu, (encoded) => {
+        return REPLY_NICKNAME_ESCAPES[encoded.toUpperCase()] ?? encoded
     })
 }
 

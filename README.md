@@ -179,9 +179,16 @@ const unliked = await client.unlike({ post })
 `threadRoot` 使用 `{ id, authorId }` 标识回复所属的一级评论；`parentId` 仅保留协议
 或容器提供的结构父节点。`replyTo` 只在协议能够明确给出实际目标的完整引用时设置，
 不能仅凭位于某个 `replyList` / `list_3` 容器中推断。因此当前 legacy 详情中的回复
-通常为 `replyTo: null`。QQ 空间还可能让一级评论与回复具有相同的 `id + authorId`。
-`reply()` 依照底层协议发送这两个字段并继续该评论线程，但 SDK 不会把读回的结构
-伪装成已确认的二级回复关系。调用方不能把 `parentId` 当作精确目标的协议依据。
+通常为 `replyTo: null`。`replyToUser` 独立表示协议正文明确报告的页面显示级目标用户，
+不代表具体评论节点，也不会用于补造 `replyTo`。公共 `content` 会移除 SDK 已识别的
+开头回复控制标记，只保留页面可见正文。
+
+回复二级评论时，SDK 使用该回复的 `threadRoot` 作为 QQ 空间写入锚点，并在内部协议
+正文中指定目标作者；调用方不需要解析或拼接 QQ 空间控制标记。QQ 空间会真实复用
+一级评论与回复的相同 `id + authorId`。完整 `QzoneComment` 会结合 `kind` 和
+`threadRoot` 精确定位；只有 `{ id, authorId }` 的引用同时匹配多个层级时，`reply()`
+会在写请求发出前抛出 `QzoneValidationError`。调用方不能把 `parentId` 当作精确目标
+的协议依据。
 
 互动内容不能为空，最终写请求不会自动重试。点赞前会读取当前状态；若已经是
 目标状态，返回 `already-applied`。写入后 SDK 会进行有限次数的只读验证，

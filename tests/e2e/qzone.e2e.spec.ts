@@ -237,6 +237,7 @@ async function runScenario(
         },
         summarizeCommentMutation
     )
+    const replyTarget = reply.comment!
     const replyReference = commentTarget(reply)!
 
     const nestedReplyContent = `[qzone-sdk-e2e:${runId}:nested-reply]`
@@ -248,7 +249,7 @@ async function runScenario(
         async () => {
             const result = await client.reply({
                 post: textPost.target!,
-                comment: replyReference,
+                comment: replyTarget,
                 content: nestedReplyContent
             })
             expect(result.outcome).toBe('verified')
@@ -290,7 +291,8 @@ async function runScenario(
             })
             expect(secondReply).toMatchObject({
                 kind: 'reply',
-                threadRoot: commentReference
+                threadRoot: commentReference,
+                replyToUser: { id: replyTarget.author.id }
             })
             return { detail, root, firstReply, secondReply }
         },
@@ -301,7 +303,8 @@ async function runScenario(
             ambiguousNestedTarget,
             nestedReplyFound: secondReply !== undefined,
             firstReplyTargetKnown: Boolean(firstReply?.replyTo),
-            nestedReplyTargetKnown: Boolean(secondReply?.replyTo)
+            nestedReplyTargetKnown: Boolean(secondReply?.replyTo),
+            nestedReplyTargetUser: secondReply?.replyToUser?.id ?? null
         })
     )
 

@@ -10,7 +10,8 @@ import type {
     QzoneMedia,
     QzonePost,
     QzoneSession,
-    QzoneTimestamp
+    QzoneTimestamp,
+    QzoneUser
 } from '../src/index.js'
 
 describe('public type contracts', () => {
@@ -50,6 +51,9 @@ describe('public type contracts', () => {
             readonly id: string
             readonly authorId: string
         } | null>()
+        expectTypeOf<
+            QzoneComment['replyToUser']
+        >().toEqualTypeOf<QzoneUser | null>()
         expectTypeOf<QzonePost['commentsComplete']>().toEqualTypeOf<boolean>()
     })
 

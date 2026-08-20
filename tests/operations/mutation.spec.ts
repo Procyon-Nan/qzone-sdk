@@ -95,6 +95,7 @@ describe('social mutation operations', () => {
                 expect(form.get('commentId')).toBe('parent')
                 expect(form.get('commentUin')).toBe('30003')
                 expect(form.get('content')).toBe('回复内容')
+                expect(form.get('paramstr')).toBe('2')
                 return jsonResponse({ data: { commentId: 'reply-new' } })
             },
             detail(
@@ -125,7 +126,8 @@ describe('social mutation operations', () => {
                 author: { id: '10001' },
                 kind: 'reply',
                 threadRoot: { id: 'parent', authorId: '30003' },
-                replyTo: null
+                replyTo: null,
+                replyToUser: null
             }
         })
     })
@@ -143,7 +145,11 @@ describe('social mutation operations', () => {
             async (request) => {
                 const form = new URLSearchParams(await request.text())
                 expect(form.get('commentId')).toBe('shared')
-                expect(form.get('commentUin')).toBe('40004')
+                expect(form.get('commentUin')).toBe('30003')
+                expect(form.get('content')).toBe(
+                    '@{uin:40004,nick:user-40004,auto:1} reply to nested'
+                )
+                expect(form.get('paramstr')).toBe('2')
                 return jsonResponse({ data: { commentId: 'nested-reply' } })
             },
             stale,
@@ -163,7 +169,77 @@ describe('social mutation operations', () => {
         })
     })
 
-    it('continues the thread when QQ reuses an ID and author across layers', async () => {
+    it('does not verify a nested reply addressed to another user', async () => {
+        const now = epochSeconds()
+        const root = {
+            ...comment('root', '30003', 'root', now),
+            replynum: 1,
+            list_3: [comment('target', '40004', 'target', now)]
+        }
+        const wrongTarget = detail(
+            post({
+                time: now,
+                comments: [
+                    {
+                        ...root,
+                        replynum: 2,
+                        list_3: [
+                            ...root.list_3,
+                            comment(
+                                'reply-new',
+                                '10001',
+                                '@{uin:50005,nick:wrong,auto:1} visible',
+                                now
+                            )
+                        ]
+                    }
+                ]
+            })
+        )
+        const fake = createFakeFetch([
+            detail(post({ time: now, comments: [root] })),
+            jsonResponse({ data: { commentId: 'reply-new' } }),
+            wrongTarget,
+            wrongTarget,
+            wrongTarget
+        ])
+
+        const result = await createClient(fake.fetch).reply({
+            post: reference(),
+            comment: { id: 'target', authorId: '40004' },
+            content: 'visible'
+        })
+
+        expect(result).toEqual({
+            outcome: 'accepted',
+            reference: { id: 'reply-new', authorId: '10001' }
+        })
+    })
+
+    it('rejects an ambiguous bare reference before writing', async () => {
+        const now = epochSeconds()
+        const root = {
+            ...comment('shared', '30003', 'root', now),
+            replynum: 1,
+            list_3: [comment('shared', '30003', 'reply', now)]
+        }
+        const fake = createFakeFetch([
+            detail(post({ time: now, comments: [root] }))
+        ])
+
+        await expect(
+            createClient(fake.fetch).reply({
+                post: reference(),
+                comment: { id: 'shared', authorId: '30003' },
+                content: 'ambiguous'
+            })
+        ).rejects.toThrow('评论引用同时匹配多个层级')
+        expect(
+            fake.calls.filter((request) => request.method === 'POST')
+        ).toHaveLength(0)
+    })
+
+    it('uses a full comment to resolve a cross-layer identity collision', async () => {
         const now = epochSeconds()
         const root = {
             ...comment('shared', '30003', 'root', now),
@@ -176,6 +252,9 @@ describe('social mutation operations', () => {
                 const form = new URLSearchParams(await request.text())
                 expect(form.get('commentId')).toBe('shared')
                 expect(form.get('commentUin')).toBe('30003')
+                expect(form.get('content')).toBe(
+                    '@{uin:30003,nick:user-30003,auto:1} continue thread'
+                )
                 return jsonResponse({ data: { commentId: 'reply-new' } })
             },
             detail(
@@ -190,7 +269,7 @@ describe('social mutation operations', () => {
                                 comment(
                                     'reply-new',
                                     '10001',
-                                    'continue thread',
+                                    '@{uin:30003,nick:user-30003,auto:1} continue thread',
                                     now
                                 )
                             ]
@@ -200,9 +279,14 @@ describe('social mutation operations', () => {
             )
         ])
 
-        const result = await createClient(fake.fetch).reply({
+        const client = createClient(fake.fetch)
+        const current = await client.getPost({ post: reference() })
+        const nested = current.comments.find(
+            (item) => item.kind === 'reply' && item.id === 'shared'
+        )!
+        const result = await client.reply({
             post: reference(),
-            comment: { id: 'shared', authorId: '30003' },
+            comment: nested,
             content: 'continue thread'
         })
 
@@ -213,7 +297,8 @@ describe('social mutation operations', () => {
                 author: { id: '10001' },
                 kind: 'reply',
                 threadRoot: { id: 'shared', authorId: '30003' },
-                replyTo: null
+                replyTo: null,
+                replyToUser: { id: '30003', nickname: 'user-30003' }
             }
         })
         expect(
@@ -236,6 +321,21 @@ describe('social mutation operations', () => {
             })
         ).rejects.toBeInstanceOf(QzoneValidationError)
         expect(fake.calls).toHaveLength(0)
+    })
+
+    it('rejects a reply target missing from the refreshed detail', async () => {
+        const fake = createFakeFetch([detail(post({ comments: [] }))])
+
+        await expect(
+            createClient(fake.fetch).reply({
+                post: reference(),
+                comment: { id: 'missing', authorId: '30003' },
+                content: 'reply'
+            })
+        ).rejects.toThrow('无法从动态详情确认目标评论')
+        expect(
+            fake.calls.filter((request) => request.method === 'POST')
+        ).toHaveLength(0)
     })
 
     it('keeps an accepted comment reference when display sync is delayed', async () => {
@@ -710,9 +810,16 @@ function comment(
     id: string,
     authorId: string,
     content: string,
-    time: number
+    time: number,
+    nickname = `user-${authorId}`
 ): Record<string, unknown> {
-    return { commentid: id, uin: authorId, content, abstime: time }
+    return {
+        commentid: id,
+        uin: authorId,
+        name: nickname,
+        content,
+        abstime: time
+    }
 }
 
 function detail(value: Record<string, unknown>): Response {

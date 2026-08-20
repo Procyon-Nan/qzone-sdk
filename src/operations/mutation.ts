@@ -1,4 +1,5 @@
 import { QzoneValidationError } from '../errors.js'
+import { serializeReplyDisplayMarker } from '../protocol/comment.js'
 import type { MutationReceipt } from '../protocol/mutation.js'
 import type { ProtocolPost } from '../protocol/types.js'
 import { toPublicPost } from '../protocol/types.js'
@@ -15,6 +16,7 @@ import type {
     PostTarget,
     QzoneComment,
     QzonePost,
+    QzoneUser,
     ReplyOptions,
     UnlikeOptions
 } from '../types.js'
@@ -27,6 +29,19 @@ import {
 } from './references.js'
 import { verifyComment, verifyDeleted, verifyLike } from './verification.js'
 import { QzoneWriteApi } from './write.js'
+
+interface NormalizedReplyTarget {
+    readonly reference: CommentReference
+    readonly identity: {
+        readonly kind: QzoneComment['kind']
+        readonly threadRoot: CommentReference | null
+    } | null
+}
+
+interface ReplyContext {
+    readonly threadRoot: CommentReference
+    readonly replyToUser: QzoneUser | null
+}
 
 export class MutationOperations {
     readonly #session: SessionState
@@ -49,7 +64,7 @@ export class MutationOperations {
     async comment(options: CommentOptions): Promise<CommentMutationResult> {
         const { post, content, signal } = normalizeCommentOptions(options)
         const target = await resolveMutationPost(this.#references, post, signal)
-        return this.#writeComment(target, post, content, null, null, signal)
+        return this.#writeComment(target, post, content, null, signal)
     }
 
     async reply(options: ReplyOptions): Promise<CommentMutationResult> {
@@ -60,7 +75,7 @@ export class MutationOperations {
             cached ??
             (await resolveMutationPost(this.#references, post, signal))
         let matches = findComments(target.comments, comment)
-        if (matches.length === 0 && cached) {
+        if (matches.length !== 1 && cached) {
             target = await resolveMutationPost(
                 this.#references,
                 post,
@@ -69,22 +84,36 @@ export class MutationOperations {
             )
             matches = findComments(target.comments, comment)
         }
+        if (matches.length > 1) {
+            throw new QzoneValidationError(
+                '评论引用同时匹配多个层级，请传入完整 QzoneComment'
+            )
+        }
         if (
             matches.length === 0 &&
-            target.comments.some((item) => item.id === comment.id)
+            !target.comments.some(
+                (item) =>
+                    item.id === comment.reference.id &&
+                    item.author.id === comment.reference.authorId
+            ) &&
+            target.comments.some((item) => item.id === comment.reference.id)
         ) {
             throw new QzoneValidationError('目标评论作者与评论引用不一致')
         }
-        const threadRoot =
-            matches.length === 1
-                ? commentThreadRoot(matches[0]!, comment)
-                : null
+        const matched = matches[0]
+        if (!matched) {
+            throw new QzoneValidationError('无法从动态详情确认目标评论')
+        }
+        const threadRoot = commentThreadRoot(matched)
+        const replyToUser = commentReplyToUser(matched)
         return this.#writeComment(
             target,
             post,
             content,
-            comment,
-            threadRoot,
+            Object.freeze({
+                threadRoot,
+                replyToUser
+            }),
             signal
         )
     }
@@ -161,18 +190,20 @@ export class MutationOperations {
         target: ProtocolPost,
         post: PostTarget,
         content: string,
-        replyTo: CommentReference | null,
-        threadRoot: CommentReference | null,
+        reply: ReplyContext | null,
         signal?: AbortSignal
     ): Promise<CommentMutationResult> {
         const sentAt = Date.now()
+        const wireContent = reply?.replyToUser
+            ? `${serializeReplyDisplayMarker(reply.replyToUser)} ${content}`
+            : content
         let fallback: 'accepted' | 'unknown' = 'accepted'
         let receipt: MutationReceipt | undefined
         try {
             receipt = await this.#write.comment(
                 target,
-                content,
-                replyTo ?? undefined,
+                wireContent,
+                reply?.threadRoot,
                 signal
             )
         } catch (error) {
@@ -187,8 +218,9 @@ export class MutationOperations {
             this.#posts,
             post,
             content,
-            replyTo,
-            threadRoot,
+            reply?.threadRoot ?? null,
+            reply?.threadRoot ?? null,
+            reply?.replyToUser?.id ?? null,
             receipt?.id ?? null,
             sentAt
         )
@@ -250,20 +282,40 @@ export class MutationOperations {
 
 function findComments(
     comments: readonly QzoneComment[],
-    reference: CommentReference
+    target: NormalizedReplyTarget
 ): readonly QzoneComment[] {
     return comments.filter(
         (comment) =>
-            comment.id === reference.id &&
-            comment.author.id === reference.authorId
+            comment.id === target.reference.id &&
+            comment.author.id === target.reference.authorId &&
+            (target.identity === null ||
+                (comment.kind === target.identity.kind &&
+                    sameReference(
+                        comment.threadRoot,
+                        target.identity.threadRoot
+                    )))
     )
 }
 
-function commentThreadRoot(
-    comment: QzoneComment,
-    reference: CommentReference
-): CommentReference | null {
-    return comment.kind === 'comment' ? reference : comment.threadRoot
+function commentThreadRoot(comment: QzoneComment): CommentReference {
+    if (comment.kind === 'comment') {
+        return Object.freeze({ id: comment.id, authorId: comment.author.id })
+    }
+    if (!comment.threadRoot) {
+        throw new QzoneValidationError('二级评论缺少所属一级评论')
+    }
+    return comment.threadRoot
+}
+
+function commentReplyToUser(comment: QzoneComment): QzoneUser | null {
+    if (comment.kind === 'comment') {
+        return null
+    }
+    const nickname = comment.author.nickname.trim()
+    if (!nickname) {
+        throw new QzoneValidationError('二级评论目标缺少作者昵称')
+    }
+    return Object.freeze({ id: comment.author.id, nickname })
 }
 
 function normalizeCommentOptions(options: CommentOptions): {
@@ -278,12 +330,12 @@ function normalizeCommentOptions(options: CommentOptions): {
 
 function normalizeReplyOptions(options: ReplyOptions): {
     readonly post: PostTarget
-    readonly comment: CommentReference
+    readonly comment: NormalizedReplyTarget
     readonly content: string
     readonly signal?: AbortSignal
 } {
     const normalized = normalizePostOptions(options)
-    const comment = normalizeCommentReference(options.comment)
+    const comment = normalizeReplyTarget(options.comment)
     const content = normalizeContent(options.content, '回复')
     return { ...normalized, comment, content }
 }
@@ -302,7 +354,7 @@ function normalizePostOptions(options: {
 }
 
 function normalizeCommentReference(
-    value: ReplyOptions['comment']
+    value: CommentReference | QzoneComment
 ): CommentReference {
     if (!value || typeof value !== 'object') {
         throw new QzoneValidationError('评论引用不能为空')
@@ -321,6 +373,50 @@ function normalizeCommentReference(
         throw new QzoneValidationError('评论作者账号必须是十进制数字字符串')
     }
     return Object.freeze({ id, authorId: authorId.trim() })
+}
+
+function normalizeReplyTarget(
+    value: ReplyOptions['comment']
+): NormalizedReplyTarget {
+    const reference = normalizeCommentReference(value)
+    if (!('author' in value)) {
+        return Object.freeze({ reference, identity: null })
+    }
+    if (value.kind !== 'comment' && value.kind !== 'reply') {
+        throw new QzoneValidationError('评论节点类型无效')
+    }
+    if (value.kind === 'comment') {
+        if (value.threadRoot !== null) {
+            throw new QzoneValidationError('一级评论不能包含线程根引用')
+        }
+        return Object.freeze({
+            reference,
+            identity: Object.freeze({ kind: value.kind, threadRoot: null })
+        })
+    }
+    if (!value.threadRoot) {
+        throw new QzoneValidationError('二级评论缺少线程根引用')
+    }
+    return Object.freeze({
+        reference,
+        identity: Object.freeze({
+            kind: value.kind,
+            threadRoot: normalizeCommentReference(value.threadRoot)
+        })
+    })
+}
+
+function sameReference(
+    left: CommentReference | null,
+    right: CommentReference | null
+): boolean {
+    return (
+        left === right ||
+        (left !== null &&
+            right !== null &&
+            left.id === right.id &&
+            left.authorId === right.authorId)
+    )
 }
 
 function normalizeContent(value: unknown, label: string): string {

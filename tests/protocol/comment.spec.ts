@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import {
     parseComments,
-    parseCommentSnapshot
+    parseCommentSnapshot,
+    serializeReplyDisplayMarker
 } from '../../src/protocol/comment.js'
 
 describe('protocol comment parsing', () => {
@@ -44,6 +45,7 @@ describe('protocol comment parsing', () => {
             parentId: null,
             threadRoot: null,
             replyTo: null,
+            replyToUser: null,
             kind: 'comment'
         })
         expect(comments[1]).toMatchObject({
@@ -51,6 +53,7 @@ describe('protocol comment parsing', () => {
             parentId: 'c1',
             threadRoot: { id: 'c1', authorId: '10002' },
             replyTo: null,
+            replyToUser: null,
             kind: 'reply'
         })
         expect(comments[2]).toMatchObject({
@@ -58,6 +61,7 @@ describe('protocol comment parsing', () => {
             parentId: 'r1',
             threadRoot: { id: 'c1', authorId: '10002' },
             replyTo: null,
+            replyToUser: null,
             kind: 'reply'
         })
     })
@@ -87,6 +91,7 @@ describe('protocol comment parsing', () => {
                 parentId: null,
                 threadRoot: null,
                 replyTo: null,
+                replyToUser: null,
                 kind: 'comment'
             },
             {
@@ -97,6 +102,7 @@ describe('protocol comment parsing', () => {
                 parentId: null,
                 threadRoot: null,
                 replyTo: null,
+                replyToUser: null,
                 kind: 'comment'
             }
         ])
@@ -113,9 +119,107 @@ describe('protocol comment parsing', () => {
                 kind: 'comment',
                 parentId: null,
                 threadRoot: null,
-                replyTo: null
+                replyTo: null,
+                replyToUser: null
             }
         ])
+    })
+
+    it('normalizes current and legacy reply display markers', () => {
+        const comments = parseComments({
+            commentlist: [
+                {
+                    tid: 'root',
+                    uin: '10002',
+                    content: 'root',
+                    list_3: [
+                        {
+                            tid: 'pc',
+                            uin: '10003',
+                            content:
+                                '@{uin:10002,nick:A%25%2C%3A%7B%7D,auto:1} visible'
+                        },
+                        {
+                            tid: 'legacy',
+                            uin: '10004',
+                            content:
+                                '@{uin:10003,nick:旧昵称,who:1,auto:1}legacy'
+                        },
+                        {
+                            tid: 'inline',
+                            uin: '10005',
+                            content: 'prefix @{uin:10003,nick:user,auto:1} body'
+                        },
+                        {
+                            tid: 'malformed',
+                            uin: '10006',
+                            content: '@{uin:abc,nick:user,auto:1} body'
+                        },
+                        {
+                            tid: 'single-decode',
+                            uin: '10007',
+                            content:
+                                '@{uin:10002,nick:literal%252C,auto:1} body'
+                        },
+                        {
+                            tid: 'nested-marker',
+                            uin: '10008',
+                            content:
+                                '@{uin:10002,nick:outer,auto:1} @{uin:10003,nick:inner,auto:1} body'
+                        }
+                    ]
+                }
+            ]
+        })
+
+        expect(comments[1]).toMatchObject({
+            content: 'visible',
+            replyToUser: { id: '10002', nickname: 'A%,:{}' }
+        })
+        expect(comments[2]).toMatchObject({
+            content: 'legacy',
+            replyToUser: { id: '10003', nickname: '旧昵称' }
+        })
+        expect(comments[3]).toMatchObject({
+            content: 'prefix @{uin:10003,nick:user,auto:1} body',
+            replyToUser: null
+        })
+        expect(comments[4]).toMatchObject({
+            content: '@{uin:abc,nick:user,auto:1} body',
+            replyToUser: null
+        })
+        expect(comments[5]).toMatchObject({
+            content: 'body',
+            replyToUser: { id: '10002', nickname: 'literal%2C' }
+        })
+        expect(comments[6]).toMatchObject({
+            content: '@{uin:10003,nick:inner,auto:1} body',
+            replyToUser: { id: '10002', nickname: 'outer' }
+        })
+        expect(
+            serializeReplyDisplayMarker({
+                id: '10002',
+                nickname: 'A%,:{}'
+            })
+        ).toBe('@{uin:10002,nick:A%25%2C%3A%7B%7D,auto:1}')
+    })
+
+    it('does not reinterpret a top-level mention as a reply target', () => {
+        const [comment] = parseComments({
+            commentlist: [
+                {
+                    tid: 'root',
+                    uin: '10002',
+                    content: '@{uin:10003,nick:user,auto:1} hello'
+                }
+            ]
+        })
+
+        expect(comment).toMatchObject({
+            kind: 'comment',
+            content: '@{uin:10003,nick:user,auto:1} hello',
+            replyToUser: null
+        })
     })
 
     it('keeps cross-layer ID collisions and skips malformed nodes', () => {

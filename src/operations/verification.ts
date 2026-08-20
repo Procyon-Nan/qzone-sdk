@@ -19,6 +19,7 @@ export async function verifyComment(
     content: string,
     replyTo: CommentReference | null,
     threadRoot: CommentReference | null,
+    replyToUserId: string | null,
     receiptId: string | null,
     sentAt: number
 ): Promise<QzoneComment | null> {
@@ -36,6 +37,7 @@ export async function verifyComment(
                 content,
                 replyTo,
                 threadRoot,
+                replyToUserId,
                 receiptId,
                 earliestAllowed,
                 latestAllowed
@@ -52,6 +54,7 @@ export async function verifyComment(
             content,
             replyTo,
             threadRoot,
+            replyToUserId,
             receiptId,
             earliestAllowed,
             latestAllowed
@@ -141,6 +144,7 @@ function matchingComments(
     content: string,
     replyTo: CommentReference | null,
     threadRoot: CommentReference | null,
+    replyToUserId: string | null,
     receiptId: string | null,
     earliestAllowed: number,
     latestAllowed: number
@@ -159,7 +163,9 @@ function matchingComments(
                 comment.kind !== 'reply' ||
                 (threadRoot !== null &&
                     (comment.threadRoot?.id !== threadRoot.id ||
-                        comment.threadRoot.authorId !== threadRoot.authorId))
+                        comment.threadRoot.authorId !== threadRoot.authorId)) ||
+                (replyToUserId !== null &&
+                    comment.replyToUser?.id !== replyToUserId)
             ) {
                 return false
             }

@@ -62,6 +62,8 @@ export interface QzoneComment {
     readonly threadRoot: CommentReference | null
     /** 协议明确报告的实际回复目标；无法确认时为 `null`。 */
     readonly replyTo: CommentReference | null
+    /** 协议明确报告的页面显示级回复目标用户。 */
+    readonly replyToUser: QzoneUser | null
     readonly kind: QzoneCommentKind
 }
 
@@ -179,7 +181,7 @@ export interface CommentReference {
 
 /** 回复评论参数。 */
 export interface ReplyOptions extends PostMutationOptions {
-    /** SDK 返回的评论或只包含公共标识的引用。 */
+    /** SDK 返回的评论或公共引用；引用匹配多个层级时必须改传完整评论。 */
     readonly comment: CommentReference | QzoneComment
     /** 非空回复正文。 */
     readonly content: string
