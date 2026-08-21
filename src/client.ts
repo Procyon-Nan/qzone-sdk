@@ -62,13 +62,8 @@ export class QzoneClient {
         })
         const read = new QzoneReadApi(this.#session, transport)
         this.#postCache = new PostCache()
-        this.#feeds = new FeedOperations(
-            this.#session,
-            read,
-            this.#postCache,
-            options.logger
-        )
-        this.#posts = new PostOperations(read, this.#postCache, options.logger)
+        this.#feeds = new FeedOperations(this.#session, read, this.#postCache)
+        this.#posts = new PostOperations(read, this.#postCache)
         const write = new QzoneWriteApi(this.#session, transport)
         this.#publish = new PublishOperations(
             this.#session,

@@ -30,9 +30,7 @@ export interface TransportRequestOptions {
     >
     readonly headers?: Readonly<Record<string, string>>
     readonly signal?: AbortSignal
-    readonly failureLogDisposition?: (
-        error: QzoneError
-    ) => 'immediate' | 'handled-fallback'
+    readonly suppressFailureLog?: (error: QzoneError) => boolean
 }
 
 export interface TransportResponse {

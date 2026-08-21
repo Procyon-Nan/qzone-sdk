@@ -32,7 +32,7 @@ export interface LegacyPagePosition {
 
 interface ReadRequestOptions {
     readonly signal?: AbortSignal
-    readonly fallbackEndpoint?: string
+    readonly fallback?: true
 }
 
 export class QzoneReadApi {
@@ -223,6 +223,14 @@ export class QzoneReadApi {
             ? this.index(userId, { signal })
             : this.profile(userId, { signal })
     }
+
+    logReadFallback(
+        endpoint: string,
+        fallbackEndpoint: string,
+        error: QzoneError
+    ): void {
+        this.#transport.logReadFallback(endpoint, fallbackEndpoint, error)
+    }
 }
 
 export function shouldFallbackRead(error: unknown): error is QzoneError {
@@ -244,19 +252,11 @@ export function shouldFallbackRead(error: unknown): error is QzoneError {
 
 function readTransportOptions(
     options: ReadRequestOptions
-): Pick<TransportRequestOptions, 'signal' | 'failureLogDisposition'> {
+): Pick<TransportRequestOptions, 'signal' | 'suppressFailureLog'> {
     return {
         signal: options.signal,
-        ...(options.fallbackEndpoint
-            ? { failureLogDisposition: fallbackFailureLogDisposition }
-            : {})
+        ...(options.fallback ? { suppressFailureLog: shouldFallbackRead } : {})
     }
-}
-
-function fallbackFailureLogDisposition(
-    error: QzoneError
-): 'immediate' | 'handled-fallback' {
-    return shouldFallbackRead(error) ? 'handled-fallback' : 'immediate'
 }
 
 function serializeBusinessParameters(

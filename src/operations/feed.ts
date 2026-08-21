@@ -4,16 +4,10 @@ import {
     type FeedCursorContext,
     type FeedCursorPosition
 } from '../internal/cursor.js'
-import { logReadFallback } from '../internal/logging.js'
 import type { ProtocolFeedPage, ProtocolPost } from '../protocol/types.js'
 import { toPublicPost } from '../protocol/types.js'
 import type { SessionState } from '../session/session.js'
-import type {
-    FeedPage,
-    FeedScope,
-    ListFeedsOptions,
-    QzoneLogger
-} from '../types.js'
+import type { FeedPage, FeedScope, ListFeedsOptions } from '../types.js'
 import { PostCache, postIdentity } from './post-cache.js'
 import { QzoneReadApi, shouldFallbackRead } from './read.js'
 
@@ -53,19 +47,12 @@ export class FeedOperations {
     readonly #session: SessionState
     readonly #read: QzoneReadApi
     readonly #cache: PostCache
-    readonly #logger?: QzoneLogger
     readonly #cursors = new FeedCursorStore<FeedState>()
 
-    constructor(
-        session: SessionState,
-        read: QzoneReadApi,
-        cache: PostCache,
-        logger?: QzoneLogger
-    ) {
+    constructor(session: SessionState, read: QzoneReadApi, cache: PostCache) {
         this.#session = session
         this.#read = read
         this.#cache = cache
-        this.#logger = logger
     }
 
     async listFeeds(options: ListFeedsOptions): Promise<FeedPage> {
@@ -218,19 +205,16 @@ export class FeedOperations {
             context.scope === 'friends' ? 'feed.recent' : 'feed.legacy'
         try {
             return {
-                page: await this.#fetchPosition(
-                    position,
-                    context,
-                    fallbackEndpoint
-                ),
+                page: await this.#fetchPosition(position, context, {
+                    fallback: true
+                }),
                 position
             }
         } catch (error) {
             if (!shouldFallbackRead(error)) {
                 throw error
             }
-            logReadFallback(
-                this.#logger,
+            this.#read.logReadFallback(
                 endpointId(position.source),
                 fallbackEndpoint,
                 error
@@ -252,23 +236,18 @@ export class FeedOperations {
         }
 
         const position = legacyPosition('legacy-feeds', pageSize)
-        const fallbackEndpoint =
-            context.scope === 'self' ? 'feed.recent' : undefined
         try {
             return {
-                page: await this.#fetchPosition(
-                    position,
-                    context,
-                    fallbackEndpoint
-                ),
+                page: await this.#fetchPosition(position, context, {
+                    ...(context.scope === 'self' ? { fallback: true } : {})
+                }),
                 position
             }
         } catch (error) {
             if (context.scope !== 'self' || !shouldFallbackRead(error)) {
                 throw error
             }
-            logReadFallback(
-                this.#logger,
+            this.#read.logReadFallback(
                 endpointId(position.source),
                 'feed.recent',
                 error
@@ -284,7 +263,7 @@ export class FeedOperations {
     #fetchPosition(
         position: BackendPosition,
         context: FeedRequestContext,
-        fallbackEndpoint?: string
+        options: { readonly fallback?: true } = {}
     ): Promise<ProtocolFeedPage> {
         switch (position.source) {
             case 'modern-active':
@@ -296,7 +275,7 @@ export class FeedOperations {
                       )
                     : this.#read.index(context.accountId, {
                           signal: context.signal,
-                          fallbackEndpoint
+                          fallback: options.fallback
                       })
             case 'modern-profile':
                 return position.backendCursor
@@ -307,12 +286,12 @@ export class FeedOperations {
                       )
                     : this.#read.profile(context.targetId, {
                           signal: context.signal,
-                          fallbackEndpoint
+                          fallback: options.fallback
                       })
             case 'legacy-feeds':
                 return this.#read.legacyFeeds(context.targetId, position, {
                     signal: context.signal,
-                    fallbackEndpoint
+                    fallback: options.fallback
                 })
             case 'legacy-recent':
                 return this.#read.recentFeeds(

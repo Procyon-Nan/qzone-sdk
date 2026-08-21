@@ -32,7 +32,6 @@ qzone-sdk/
 │   ├── internal/
 │   │   ├── cursor.ts       # 实例与请求上下文绑定的不透明游标存储
 │   │   ├── literal.ts      # 非严格 JavaScript 字面量的受控解析
-│   │   ├── logging.ts      # 结构化日志安全发送与读取回退事件
 │   │   └── write-queue.ts  # 实例级 FIFO 写队列与关闭协调
 │   ├── operations/
 │   │   ├── feed.ts         # 三类 Feed、分页、回退与去重编排

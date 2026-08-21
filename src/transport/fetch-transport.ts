@@ -6,7 +6,6 @@ import {
     QzoneRateLimitError,
     QzoneRequestError
 } from '../errors.js'
-import { emitLog } from '../internal/logging.js'
 import { SessionState } from '../session/session.js'
 import type { QzoneLogger } from '../types.js'
 import {
@@ -164,10 +163,7 @@ export class FetchTransport {
                         }
                     })
                 }
-                if (
-                    options.failureLogDisposition?.(failure) !==
-                    'handled-fallback'
-                ) {
+                if (!options.suppressFailureLog?.(failure)) {
                     this.#logFailure(
                         endpoint.id,
                         startedAt,
@@ -190,6 +186,22 @@ export class FetchTransport {
     ): Promise<unknown> {
         const response = await this.request(endpoint, options)
         return parseResponseData(response.text, endpoint.id)
+    }
+
+    logReadFallback(
+        endpoint: string,
+        fallbackEndpoint: string,
+        error: QzoneError
+    ): void {
+        const { statusCode } = error.context ?? {}
+        this.#log({
+            level: 'info',
+            phase: 'read.fallback',
+            endpoint,
+            fallbackEndpoint,
+            ...(statusCode !== undefined ? { statusCode } : {}),
+            errorCode: error.code
+        })
     }
 
     async #requestWithRedirects(
@@ -414,7 +426,11 @@ export class FetchTransport {
     }
 
     #log(event: Parameters<QzoneLogger>[0]): void {
-        emitLog(this.#logger, event)
+        try {
+            this.#logger?.(Object.freeze({ ...event }))
+        } catch {
+            // Logging must not affect protocol behavior.
+        }
     }
 }
 

@@ -373,7 +373,7 @@ describe('Fetch transport', () => {
         expect(serialized).not.toContain('token')
     })
 
-    it('lets a caller defer the log for a normalized request failure', async () => {
+    it('lets a caller suppress the log for a normalized request failure', async () => {
         const events: Record<string, unknown>[] = []
         let handledFailure: unknown
         const fake = createFakeFetch([
@@ -385,9 +385,9 @@ describe('Fetch transport', () => {
 
         await expect(
             transport.request(READ_ENDPOINT, {
-                failureLogDisposition: (error) => {
+                suppressFailureLog: (error) => {
                     handledFailure = error
-                    return 'handled-fallback'
+                    return true
                 }
             })
         ).rejects.toBeInstanceOf(QzonePermissionError)
