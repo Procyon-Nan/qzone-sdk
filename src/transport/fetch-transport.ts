@@ -6,6 +6,7 @@ import {
     QzoneRateLimitError,
     QzoneRequestError
 } from '../errors.js'
+import { emitLog } from '../internal/logging.js'
 import { SessionState } from '../session/session.js'
 import type { QzoneLogger } from '../types.js'
 import {
@@ -163,7 +164,17 @@ export class FetchTransport {
                         }
                     })
                 }
-                this.#logFailure(endpoint.id, startedAt, attempt - 1, failure)
+                if (
+                    options.failureLogDisposition?.(failure) !==
+                    'handled-fallback'
+                ) {
+                    this.#logFailure(
+                        endpoint.id,
+                        startedAt,
+                        attempt - 1,
+                        failure
+                    )
+                }
                 throw failure
             }
         }
@@ -403,11 +414,7 @@ export class FetchTransport {
     }
 
     #log(event: Parameters<QzoneLogger>[0]): void {
-        try {
-            this.#logger?.(Object.freeze({ ...event }))
-        } catch {
-            // Logging must not affect protocol behavior.
-        }
+        emitLog(this.#logger, event)
     }
 }
 

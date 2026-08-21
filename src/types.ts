@@ -293,6 +293,7 @@ export interface QzoneLogEvent {
     readonly level: QzoneLogLevel
     readonly phase: string
     readonly endpoint?: string
+    readonly fallbackEndpoint?: string
     readonly durationMs?: number
     readonly retryCount?: number
     readonly statusCode?: number

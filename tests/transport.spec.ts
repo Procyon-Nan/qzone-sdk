@@ -338,6 +338,7 @@ describe('Fetch transport', () => {
             'level',
             'phase',
             'endpoint',
+            'fallbackEndpoint',
             'durationMs',
             'retryCount',
             'statusCode',
@@ -370,6 +371,31 @@ describe('Fetch transport', () => {
         expect(serialized).not.toContain('header-value')
         expect(serialized).not.toContain('p_skey')
         expect(serialized).not.toContain('token')
+    })
+
+    it('lets a caller defer the log for a normalized request failure', async () => {
+        const events: Record<string, unknown>[] = []
+        let handledFailure: unknown
+        const fake = createFakeFetch([
+            textResponse('private-response-value', { status: 403 })
+        ])
+        const transport = createTransport(fake.fetch, {
+            logger: (event) => events.push({ ...event })
+        })
+
+        await expect(
+            transport.request(READ_ENDPOINT, {
+                failureLogDisposition: (error) => {
+                    handledFailure = error
+                    return 'handled-fallback'
+                }
+            })
+        ).rejects.toBeInstanceOf(QzonePermissionError)
+
+        expect(handledFailure).toBeInstanceOf(QzonePermissionError)
+        expect(events.some((event) => event.phase === 'request.error')).toBe(
+            false
+        )
     })
 })
 

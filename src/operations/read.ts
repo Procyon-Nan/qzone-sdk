@@ -1,4 +1,5 @@
 import {
+    type QzoneError,
     QzoneParseError,
     QzonePermissionError,
     QzoneRateLimitError,
@@ -21,11 +22,17 @@ import type { ProtocolFeedPage, ProtocolPost } from '../protocol/types.js'
 import type { SessionState } from '../session/session.js'
 import type { QzoneId } from '../types.js'
 import type { FetchTransport } from '../transport/fetch-transport.js'
+import type { TransportRequestOptions } from '../transport/types.js'
 
 export interface LegacyPagePosition {
     readonly page: number
     readonly beginTime: number
     readonly pageSize: number
+}
+
+interface ReadRequestOptions {
+    readonly signal?: AbortSignal
+    readonly fallbackEndpoint?: string
 }
 
 export class QzoneReadApi {
@@ -39,13 +46,11 @@ export class QzoneReadApi {
 
     async index(
         accountId: QzoneId,
-        signal?: AbortSignal
+        options: ReadRequestOptions = {}
     ): Promise<ProtocolFeedPage> {
         const response = await this.#transport.request(
             indexEndpoint(accountId),
-            {
-                signal
-            }
+            readTransportOptions(options)
         )
         const page = parseIndexPageHtml(response.text)
         await this.#session.setToken(accountId, page.token)
@@ -54,13 +59,13 @@ export class QzoneReadApi {
 
     async profile(
         userId: QzoneId,
-        signal?: AbortSignal
+        options: ReadRequestOptions = {}
     ): Promise<ProtocolFeedPage> {
         const response = await this.#transport.request(
             profileEndpoint(userId),
             {
                 query: { hostuin: userId, starttime: 0 },
-                signal
+                ...readTransportOptions(options)
             }
         )
         const page = parseProfilePageHtml(response.text)
@@ -106,7 +111,7 @@ export class QzoneReadApi {
     async legacyFeeds(
         userId: QzoneId,
         position: LegacyPagePosition,
-        signal?: AbortSignal
+        options: ReadRequestOptions = {}
     ): Promise<ProtocolFeedPage> {
         const payload = await this.#transport.requestData(
             legacyFeedsEndpoint(userId),
@@ -123,7 +128,7 @@ export class QzoneReadApi {
                     need_comment: 1,
                     need_private_comment: 1
                 },
-                signal
+                ...readTransportOptions(options)
             }
         )
         assertPayloadSuccess(payload, 'feed.legacy')
@@ -164,7 +169,7 @@ export class QzoneReadApi {
     async legacyDetail(
         authorId: QzoneId,
         postId: QzoneId,
-        signal?: AbortSignal
+        options: ReadRequestOptions = {}
     ): Promise<unknown> {
         const payload = await this.#transport.requestData(
             legacyDetailEndpoint(authorId, postId),
@@ -177,7 +182,7 @@ export class QzoneReadApi {
                     not_trunc_con: 1,
                     format: 'json'
                 },
-                signal
+                ...readTransportOptions(options)
             }
         )
         assertPayloadSuccess(payload, 'post.detail.legacy')
@@ -215,12 +220,12 @@ export class QzoneReadApi {
             return null
         }
         return userId === this.#session.accountId
-            ? this.index(userId, signal)
-            : this.profile(userId, signal)
+            ? this.index(userId, { signal })
+            : this.profile(userId, { signal })
     }
 }
 
-export function shouldFallbackRead(error: unknown): boolean {
+export function shouldFallbackRead(error: unknown): error is QzoneError {
     if (error instanceof QzoneParseError) {
         return true
     }
@@ -235,6 +240,23 @@ export function shouldFallbackRead(error: unknown): boolean {
     }
     const status = error.context?.statusCode ?? 0
     return [301, 302, 303, 307, 308].includes(status) || status >= 500
+}
+
+function readTransportOptions(
+    options: ReadRequestOptions
+): Pick<TransportRequestOptions, 'signal' | 'failureLogDisposition'> {
+    return {
+        signal: options.signal,
+        ...(options.fallbackEndpoint
+            ? { failureLogDisposition: fallbackFailureLogDisposition }
+            : {})
+    }
+}
+
+function fallbackFailureLogDisposition(
+    error: QzoneError
+): 'immediate' | 'handled-fallback' {
+    return shouldFallbackRead(error) ? 'handled-fallback' : 'immediate'
 }
 
 function serializeBusinessParameters(

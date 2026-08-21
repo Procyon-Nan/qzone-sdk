@@ -1,3 +1,4 @@
+import type { QzoneError } from '../errors.js'
 import type { QzoneId } from '../types.js'
 
 export type TransportMethod = 'GET' | 'POST'
@@ -29,6 +30,9 @@ export interface TransportRequestOptions {
     >
     readonly headers?: Readonly<Record<string, string>>
     readonly signal?: AbortSignal
+    readonly failureLogDisposition?: (
+        error: QzoneError
+    ) => 'immediate' | 'handled-fallback'
 }
 
 export interface TransportResponse {

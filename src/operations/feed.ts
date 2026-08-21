@@ -4,10 +4,16 @@ import {
     type FeedCursorContext,
     type FeedCursorPosition
 } from '../internal/cursor.js'
+import { logReadFallback } from '../internal/logging.js'
 import type { ProtocolFeedPage, ProtocolPost } from '../protocol/types.js'
 import { toPublicPost } from '../protocol/types.js'
 import type { SessionState } from '../session/session.js'
-import type { FeedPage, FeedScope, ListFeedsOptions } from '../types.js'
+import type {
+    FeedPage,
+    FeedScope,
+    ListFeedsOptions,
+    QzoneLogger
+} from '../types.js'
 import { PostCache, postIdentity } from './post-cache.js'
 import { QzoneReadApi, shouldFallbackRead } from './read.js'
 
@@ -47,12 +53,19 @@ export class FeedOperations {
     readonly #session: SessionState
     readonly #read: QzoneReadApi
     readonly #cache: PostCache
+    readonly #logger?: QzoneLogger
     readonly #cursors = new FeedCursorStore<FeedState>()
 
-    constructor(session: SessionState, read: QzoneReadApi, cache: PostCache) {
+    constructor(
+        session: SessionState,
+        read: QzoneReadApi,
+        cache: PostCache,
+        logger?: QzoneLogger
+    ) {
         this.#session = session
         this.#read = read
         this.#cache = cache
+        this.#logger = logger
     }
 
     async listFeeds(options: ListFeedsOptions): Promise<FeedPage> {
@@ -201,15 +214,27 @@ export class FeedOperations {
             }
         }
 
+        const fallbackEndpoint =
+            context.scope === 'friends' ? 'feed.recent' : 'feed.legacy'
         try {
             return {
-                page: await this.#fetchPosition(position, context),
+                page: await this.#fetchPosition(
+                    position,
+                    context,
+                    fallbackEndpoint
+                ),
                 position
             }
         } catch (error) {
             if (!shouldFallbackRead(error)) {
                 throw error
             }
+            logReadFallback(
+                this.#logger,
+                endpointId(position.source),
+                fallbackEndpoint,
+                error
+            )
             return this.#fetchInitialFallback(context, position.pageSize)
         }
     }
@@ -227,15 +252,27 @@ export class FeedOperations {
         }
 
         const position = legacyPosition('legacy-feeds', pageSize)
+        const fallbackEndpoint =
+            context.scope === 'self' ? 'feed.recent' : undefined
         try {
             return {
-                page: await this.#fetchPosition(position, context),
+                page: await this.#fetchPosition(
+                    position,
+                    context,
+                    fallbackEndpoint
+                ),
                 position
             }
         } catch (error) {
             if (context.scope !== 'self' || !shouldFallbackRead(error)) {
                 throw error
             }
+            logReadFallback(
+                this.#logger,
+                endpointId(position.source),
+                'feed.recent',
+                error
+            )
             const recent = legacyPosition('legacy-recent', pageSize)
             return {
                 page: await this.#fetchPosition(recent, context),
@@ -246,7 +283,8 @@ export class FeedOperations {
 
     #fetchPosition(
         position: BackendPosition,
-        context: FeedRequestContext
+        context: FeedRequestContext,
+        fallbackEndpoint?: string
     ): Promise<ProtocolFeedPage> {
         switch (position.source) {
             case 'modern-active':
@@ -256,7 +294,10 @@ export class FeedOperations {
                           position.backendCursor,
                           context.signal
                       )
-                    : this.#read.index(context.accountId, context.signal)
+                    : this.#read.index(context.accountId, {
+                          signal: context.signal,
+                          fallbackEndpoint
+                      })
             case 'modern-profile':
                 return position.backendCursor
                     ? this.#read.profileMore(
@@ -264,13 +305,15 @@ export class FeedOperations {
                           position.backendCursor,
                           context.signal
                       )
-                    : this.#profile(context)
+                    : this.#read.profile(context.targetId, {
+                          signal: context.signal,
+                          fallbackEndpoint
+                      })
             case 'legacy-feeds':
-                return this.#read.legacyFeeds(
-                    context.targetId,
-                    position,
-                    context.signal
-                )
+                return this.#read.legacyFeeds(context.targetId, position, {
+                    signal: context.signal,
+                    fallbackEndpoint
+                })
             case 'legacy-recent':
                 return this.#read.recentFeeds(
                     context.accountId,
@@ -279,9 +322,18 @@ export class FeedOperations {
                 )
         }
     }
+}
 
-    async #profile(context: FeedRequestContext): Promise<ProtocolFeedPage> {
-        return this.#read.profile(context.targetId, context.signal)
+function endpointId(source: FeedSource): string {
+    switch (source) {
+        case 'modern-active':
+            return 'feed.index'
+        case 'modern-profile':
+            return 'feed.profile'
+        case 'legacy-feeds':
+            return 'feed.legacy'
+        case 'legacy-recent':
+            return 'feed.recent'
     }
 }
 

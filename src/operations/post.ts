@@ -4,6 +4,7 @@ import {
     QzoneRequestError,
     QzoneValidationError
 } from '../errors.js'
+import { logReadFallback } from '../internal/logging.js'
 import {
     findPostDetail,
     mergeProtocolPost,
@@ -15,6 +16,7 @@ import type {
     GetPostOptions,
     PostTarget,
     QzoneId,
+    QzoneLogger,
     QzonePost
 } from '../types.js'
 import { PostCache } from './post-cache.js'
@@ -23,10 +25,12 @@ import { QzoneReadApi, shouldFallbackRead } from './read.js'
 export class PostOperations {
     readonly #read: QzoneReadApi
     readonly #cache: PostCache
+    readonly #logger?: QzoneLogger
 
-    constructor(read: QzoneReadApi, cache: PostCache) {
+    constructor(read: QzoneReadApi, cache: PostCache, logger?: QzoneLogger) {
         this.#read = read
         this.#cache = cache
+        this.#logger = logger
     }
 
     async getPost(options: GetPostOptions): Promise<QzonePost> {
@@ -60,6 +64,12 @@ export class PostOperations {
                 if (!shouldFallbackRead(error)) {
                     throw error
                 }
+                logReadFallback(
+                    this.#logger,
+                    'post.detail.legacy',
+                    'post.detail.h5',
+                    error
+                )
                 record = await this.#h5Detail(base, target, signal)
             }
         } else {
@@ -84,7 +94,10 @@ export class PostOperations {
             const detail = await this.#read.legacyDetail(
                 target.authorId,
                 target.id,
-                signal
+                {
+                    signal,
+                    fallbackEndpoint: 'post.detail.h5'
+                }
             )
             return requirePostDetail(detail, target)
         } catch (error) {

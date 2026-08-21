@@ -9,6 +9,7 @@ import {
     QzoneRequestError,
     QzoneValidationError
 } from '../../src/index.js'
+import type { QzoneLogEvent, QzoneLogger } from '../../src/index.js'
 import { createFakeFetch } from '../support/fake-fetch.js'
 import { jsonResponse, textResponse } from '../support/fixtures.js'
 
@@ -46,6 +47,7 @@ describe('Feed operations', () => {
     })
 
     it('falls back from an index home redirect to legacy recent feeds', async () => {
+        const events: QzoneLogEvent[] = []
         const fake = createFakeFetch([
             textResponse('', {
                 status: 302,
@@ -66,7 +68,12 @@ describe('Feed operations', () => {
                 ])
             }
         ])
-        const client = createClient(fake.fetch)
+        const client = createClient(fake.fetch, (event) => {
+            events.push(event)
+            if (event.phase === 'read.fallback') {
+                throw new Error('logger failed')
+            }
+        })
 
         const page = await client.listFeeds({ scope: 'friends', limit: 2 })
 
@@ -75,6 +82,112 @@ describe('Feed operations', () => {
         ])
         expect(page.nextCursor).not.toBeNull()
         expect(fake.calls).toHaveLength(2)
+        expect(events).toContainEqual({
+            level: 'info',
+            phase: 'read.fallback',
+            endpoint: 'feed.index',
+            fallbackEndpoint: 'feed.recent',
+            statusCode: 302,
+            errorCode: 'QZONE_REQUEST'
+        })
+        expect(events.some((event) => event.level === 'error')).toBe(false)
+    })
+
+    it('reports two successful self-feed fallbacks without error events', async () => {
+        const events: QzoneLogEvent[] = []
+        const homeRedirect = textResponse('', {
+            status: 302,
+            headers: { location: 'https://user.qzone.qq.com/10001' }
+        })
+        const fake = createFakeFetch([
+            homeRedirect,
+            homeRedirect,
+            jsonResponse([
+                {
+                    appid: 311,
+                    key: 'self-fallback',
+                    opuin: '10001',
+                    abstime: 1_710_000_000,
+                    html: '<li><div class="f-info">回退动态</div></li>'
+                }
+            ])
+        ])
+        const client = createClient(fake.fetch, (event) => events.push(event))
+
+        const page = await client.listFeeds({ scope: 'self', limit: 1 })
+
+        expect(page.items[0]?.id).toBe('self-fallback')
+        expect(
+            events.filter((event) => event.phase === 'read.fallback')
+        ).toEqual([
+            expect.objectContaining({
+                endpoint: 'feed.index',
+                fallbackEndpoint: 'feed.legacy'
+            }),
+            expect.objectContaining({
+                endpoint: 'feed.legacy',
+                fallbackEndpoint: 'feed.recent'
+            })
+        ])
+        expect(events.some((event) => event.level === 'error')).toBe(false)
+    })
+
+    it('keeps the final feed fallback failure visible', async () => {
+        const events: QzoneLogEvent[] = []
+        const fake = createFakeFetch([
+            textResponse('', {
+                status: 302,
+                headers: { location: 'https://user.qzone.qq.com/10001' }
+            }),
+            textResponse('unavailable', { status: 503 }),
+            textResponse('unavailable', { status: 503 }),
+            textResponse('unavailable', { status: 503 })
+        ])
+        const client = createClient(fake.fetch, (event) => events.push(event))
+
+        await expect(
+            client.listFeeds({ scope: 'friends', limit: 1 })
+        ).rejects.toMatchObject({
+            code: 'QZONE_REQUEST',
+            context: { statusCode: 503 }
+        })
+
+        expect(
+            events.filter((event) => event.phase === 'read.fallback')
+        ).toHaveLength(1)
+        expect(events.at(-1)).toMatchObject({
+            level: 'error',
+            phase: 'request.error',
+            endpoint: 'feed.recent',
+            statusCode: 503,
+            errorCode: 'QZONE_REQUEST'
+        })
+    })
+
+    it('does not fall back from an index login redirect', async () => {
+        const events: QzoneLogEvent[] = []
+        const fake = createFakeFetch([
+            textResponse('', {
+                status: 302,
+                headers: { location: 'https://ptlogin2.qq.com/login' }
+            })
+        ])
+        const client = createClient(fake.fetch, (event) => events.push(event))
+
+        await expect(
+            client.listFeeds({ scope: 'friends', limit: 1 })
+        ).rejects.toBeInstanceOf(QzoneAuthError)
+
+        expect(fake.calls).toHaveLength(1)
+        expect(events.some((event) => event.phase === 'read.fallback')).toBe(
+            false
+        )
+        expect(events.at(-1)).toMatchObject({
+            level: 'error',
+            phase: 'request.error',
+            endpoint: 'feed.index',
+            errorCode: 'QZONE_AUTH'
+        })
     })
 
     it('uses profile HTML and the target-bound modern cursor', async () => {
@@ -292,6 +405,7 @@ describe('Feed operations', () => {
     })
 
     it('falls back to token-bound H5 detail after legacy detail is rejected', async () => {
+        const events: QzoneLogEvent[] = []
         const fake = createFakeFetch([
             textResponse('forbidden', { status: 403 }),
             (request) => {
@@ -310,7 +424,7 @@ describe('Feed operations', () => {
                 })
             }
         ])
-        const client = createClient(fake.fetch)
+        const client = createClient(fake.fetch, (event) => events.push(event))
 
         const detail = await client.getPost({
             post: { id: 'target', authorId: '10002' }
@@ -322,6 +436,15 @@ describe('Feed operations', () => {
             content: 'H5 详情'
         })
         expect(fake.calls).toHaveLength(3)
+        expect(events).toContainEqual({
+            level: 'info',
+            phase: 'read.fallback',
+            endpoint: 'post.detail.legacy',
+            fallbackEndpoint: 'post.detail.h5',
+            statusCode: 403,
+            errorCode: 'QZONE_PERMISSION'
+        })
+        expect(events.some((event) => event.level === 'error')).toBe(false)
     })
 
     it('obtains the current account token from index before H5 detail', async () => {
@@ -587,12 +710,16 @@ describe('Feed operations', () => {
     })
 })
 
-function createClient(fetch: typeof globalThis.fetch): QzoneClient {
+function createClient(
+    fetch: typeof globalThis.fetch,
+    logger?: QzoneLogger
+): QzoneClient {
     return new QzoneClient({
         session: {
             cookies: 'uin=o10001; p_skey=secret'
         },
         fetch,
+        logger,
         requestTimeoutMs: 1_000
     })
 }
