@@ -88,6 +88,14 @@ await client.updateSession({
 失败，内存状态不会回滚，当前调用抛出 `QzoneRequestError`，并且
 `getSessionInfo().persistencePending` 为 `true`；后续持久化成功后自动清除。
 
+### 会话凭据要求
+
+说说类接口（`emotion_cgi_*`，包括 `listFeeds` 的 legacy 路径与动态详情）只接受
+`p_skey` 派生的 g_tk；仅凭 `skey` 构造的会话会在这些接口上得到业务码 -3000
+（`QzoneAuthError`，错误 context 的 `hint` 字段会说明这一点）。请确保登录闭环
+产出包含 `p_skey` 的完整 Cookie。`getSessionInfo().gtkSource` 可用于在调用前
+自查当前 g_tk 的派生来源。
+
 ## 读取动态
 
 `QzoneClient` 通过判别联合明确区分当前账号、指定用户和好友动态流：

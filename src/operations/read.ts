@@ -1,5 +1,6 @@
 import {
     type QzoneError,
+    QzoneAuthError,
     QzoneParseError,
     QzonePermissionError,
     QzoneRateLimitError,
@@ -44,6 +45,27 @@ export class QzoneReadApi {
         this.#transport = transport
     }
 
+    /**
+     * 说说类接口（emotion_cgi_*）只接受 p_skey 派生的 g_tk。仅有 skey 的会话
+     * 在这些端点上会得到业务码 -3000，这里把它翻译成可操作的提示。
+     */
+    #enhanceMoodAuthError(error: unknown): unknown {
+        if (
+            error instanceof QzoneAuthError
+            && this.#session.getCookie('p_skey') === undefined
+        ) {
+            const context = {
+                ...(error.context ?? {}),
+                hint: '会话缺少 p_skey Cookie：说说类接口需要 p_skey 派生的 g_tk，仅凭 skey 会被服务端拒绝。请重新完成登录闭环以获取完整 Cookie。'
+            }
+            return new QzoneAuthError(
+                'QQ 空间登录态已失效或缺少 p_skey（说说类接口需要 p_skey 派生的 g_tk）',
+                { cause: error, context }
+            )
+        }
+        return error
+    }
+
     async index(
         accountId: QzoneId,
         options: ReadRequestOptions = {}
@@ -78,11 +100,16 @@ export class QzoneReadApi {
         cursor: string,
         signal?: AbortSignal
     ): Promise<ProtocolFeedPage> {
-        const payload = await this.#transport.requestData(
-            activeFeedsEndpoint(accountId),
-            { query: { attach_info: cursor }, signal }
-        )
-        assertPayloadSuccess(payload, 'feed.active')
+        let payload
+        try {
+            payload = await this.#transport.requestData(
+                activeFeedsEndpoint(accountId),
+                { query: { attach_info: cursor }, signal }
+            )
+            assertPayloadSuccess(payload, 'feed.active')
+        } catch (error) {
+            throw this.#enhanceMoodAuthError(error)
+        }
         return parseFeedPage(payload)
     }
 
@@ -113,25 +140,34 @@ export class QzoneReadApi {
         position: LegacyPagePosition,
         options: ReadRequestOptions = {}
     ): Promise<ProtocolFeedPage> {
-        const payload = await this.#transport.requestData(
-            legacyFeedsEndpoint(userId),
-            {
-                query: {
-                    uin: userId,
-                    hostUin: userId,
-                    pos: (position.page - 1) * position.pageSize,
-                    num: position.pageSize,
-                    replynum: 100,
-                    callback: '_preloadCallback',
-                    code_version: 1,
-                    format: 'json',
-                    need_comment: 1,
-                    need_private_comment: 1
-                },
-                ...readTransportOptions(options)
-            }
-        )
-        assertPayloadSuccess(payload, 'feed.legacy')
+        let payload
+        try {
+            payload = await this.#transport.requestData(
+                legacyFeedsEndpoint(userId),
+                {
+                    query: {
+                        uin: userId,
+                        hostUin: userId,
+                        pos: (position.page - 1) * position.pageSize,
+                        num: position.pageSize,
+                        replynum: 100,
+                        callback: '_preloadCallback',
+                        code_version: 1,
+                        format: 'json',
+                        need_comment: 1,
+                        need_private_comment: 1
+                    },
+                    ...readTransportOptions(options)
+                }
+            )
+        } catch (error) {
+            throw this.#enhanceMoodAuthError(error)
+        }
+        try {
+            assertPayloadSuccess(payload, 'feed.legacy')
+        } catch (error) {
+            throw this.#enhanceMoodAuthError(error)
+        }
         return parseFeedPage(payload, userId)
     }
 
@@ -171,21 +207,26 @@ export class QzoneReadApi {
         postId: QzoneId,
         options: ReadRequestOptions = {}
     ): Promise<unknown> {
-        const payload = await this.#transport.requestData(
-            legacyDetailEndpoint(authorId, postId),
-            {
-                query: {
-                    uin: authorId,
-                    tid: postId,
-                    num: 20,
-                    pos: 0,
-                    not_trunc_con: 1,
-                    format: 'json'
-                },
-                ...readTransportOptions(options)
-            }
-        )
-        assertPayloadSuccess(payload, 'post.detail.legacy')
+        let payload
+        try {
+            payload = await this.#transport.requestData(
+                legacyDetailEndpoint(authorId, postId),
+                {
+                    query: {
+                        uin: authorId,
+                        tid: postId,
+                        num: 20,
+                        pos: 0,
+                        not_trunc_con: 1,
+                        format: 'json'
+                    },
+                    ...readTransportOptions(options)
+                }
+            )
+            assertPayloadSuccess(payload, 'post.detail.legacy')
+        } catch (error) {
+            throw this.#enhanceMoodAuthError(error)
+        }
         return payload
     }
 

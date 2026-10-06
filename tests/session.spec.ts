@@ -21,6 +21,7 @@ describe('Session state', () => {
         expect(client.getSessionInfo()).toEqual({
             accountId: '10001',
             authenticated: true,
+            gtkSource: 'p_skey',
             updatedAt: NOW,
             persistencePending: false
         })
@@ -198,6 +199,7 @@ describe('Session state', () => {
         expect(client.getSessionInfo()).toEqual({
             accountId: null,
             authenticated: false,
+            gtkSource: 'none',
             updatedAt: null,
             persistencePending: false
         })

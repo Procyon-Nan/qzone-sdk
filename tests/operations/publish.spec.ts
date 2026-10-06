@@ -357,6 +357,7 @@ describe('publish operations', () => {
         expect(client.getSessionInfo()).toEqual({
             accountId: null,
             authenticated: false,
+            gtkSource: 'none',
             updatedAt: null,
             persistencePending: false
         })
