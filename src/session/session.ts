@@ -16,7 +16,8 @@ import {
     parseCookies,
     serializeCookies
 } from './cookies.js'
-import { computeGtk } from './gtk.js'
+import { computeGtk, gtkSourceOf } from './gtk.js'
+import type { GtkSource } from './gtk.js'
 
 export interface SessionStateOptions {
     readonly onSessionChange?: SessionChangeHandler
@@ -55,6 +56,10 @@ export class SessionState {
         return computeGtk(this.#cookies)
     }
 
+    get gtkSource(): GtkSource {
+        return gtkSourceOf(this.#cookies)
+    }
+
     get closed(): boolean {
         return this.#closed
     }
@@ -71,6 +76,7 @@ export class SessionState {
         return {
             accountId: this.#accountId,
             authenticated: this.#accountId !== null && this.gtk !== 0,
+            gtkSource: this.gtkSource,
             updatedAt: this.#updatedAt,
             persistencePending: this.#persistencePending
         }

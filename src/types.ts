@@ -269,6 +269,13 @@ export interface SessionInfo {
     readonly accountId: QzoneId | null
     /** 是否存在可识别账号且 g_tk 非零。 */
     readonly authenticated: boolean
+    /**
+     * 当前 g_tk 的派生来源。
+     *
+     * 说说类接口（`emotion_cgi_*`）只接受 `p_skey` 派生的 g_tk；来源为
+     * `skey`/`skey2` 时这些接口会被服务端以业务码 -3000 拒绝。
+     */
+    readonly gtkSource: 'p_skey' | 'skey' | 'skey2' | 'g_tk' | 'none'
     /** 最近一次 Session 更新时间。 */
     readonly updatedAt: QzoneTimestamp | null
     /** 最新内存 Session 是否尚未成功通过回调持久化。 */
