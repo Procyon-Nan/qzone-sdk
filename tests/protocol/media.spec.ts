@@ -246,6 +246,33 @@ describe('protocol media parsing', () => {
         ])
     })
 
+    it.each([
+        'https://cache.tv.qq.com/qqplayerout.swf?v=first&auto=0',
+        'https://user.qzone.qq.com/10001/qzvideo/first'
+    ])(
+        'omits a video whose player identifies a different upload: %s',
+        (url3) => {
+            expect(
+                parseMedia(
+                    {
+                        pic: [
+                            {
+                                is_video: 1,
+                                video_info: {
+                                    vid: 'second',
+                                    video_id: 'second',
+                                    url3,
+                                    url1: 'https://m.qpic.cn/second.jpg'
+                                }
+                            }
+                        ]
+                    },
+                    TARGET
+                )
+            ).toEqual([])
+        }
+    )
+
     it('reads each detail video from url3 and its cover from url1', () => {
         const clip = {
             video_id: 'clip',
@@ -286,7 +313,8 @@ describe('protocol media parsing', () => {
         )
         expect(media).toEqual([
             { kind: 'file', url: file, name: 'notes.pdf' },
-            { kind: 'video', id: 'clip', url: playlist }
+            { kind: 'video', id: 'clip', url: playlist },
+            { kind: 'video', id: 'no-playback', url: '', previewUrl: cover }
         ])
     })
 

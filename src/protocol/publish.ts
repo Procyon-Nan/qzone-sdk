@@ -60,33 +60,33 @@ export function publishMediaForm(
     photos: readonly UploadedPhoto[],
     videoIds: readonly string[]
 ) {
-    const groups: { type: string; subtype: string; values: string[] }[] = []
+    const groups: { type: string; subtype: string; value: string }[] = []
     if (photos.length)
         groups.push({
             type: '1',
             subtype: '1',
-            values: photos.map((photo) => photo.richval)
+            value: photos.map((photo) => photo.richval).join('\t')
         })
-    if (videoIds.length)
+    // Each video needs its own group to preserve its ID and player URL.
+    for (const vid of videoIds) {
+        const play = encodeURIComponent(
+            `http://cache.tv.qq.com/qqplayerout.swf?v=${vid}&auto=0`
+        )
+        const detail = encodeURIComponent(
+            `http://user.qzone.qq.com/${account}/qzvideo/${vid}`
+        )
         groups.push({
             type: '3',
             subtype: '7',
-            values: videoIds.map((vid) => {
-                const play = encodeURIComponent(
-                    `http://cache.tv.qq.com/qqplayerout.swf?v=${vid}&auto=0`
-                )
-                const detail = encodeURIComponent(
-                    `http://user.qzone.qq.com/${account}/qzvideo/${vid}`
-                )
-                return `playurl=${play}&detailurl=${detail}&who=5&rich_flag=4&vid=${vid}`
-            })
+            value: `playurl=${play}&detailurl=${detail}&who=5&rich_flag=4&vid=${vid}`
         })
+    }
     const bo = photos
         .map((photo) => photo.picBo)
         .filter(Boolean)
         .join(',')
     return {
-        richval: groups.map((group) => group.values.join('\t')).join('\n'),
+        richval: groups.map((group) => group.value).join('\n'),
         ...(groups.length
             ? {
                   richtype: groups.map((group) => group.type).join('\n'),

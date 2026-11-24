@@ -407,14 +407,35 @@ describe('video publishing', () => {
             url1: 'https://m.qpic.cn/' + vid + '.jpg'
         }
     })
-    it.each([false, true])(
-        'verifies all independent photos and exact resolved videos (incomplete=%s)',
-        async (incomplete) => {
+    it.each([
+        'complete',
+        'missing-video',
+        'missing-photo',
+        'wrong-author',
+        'wrong-content',
+        'duplicate-id',
+        'swapped-player'
+    ])(
+        'verifies detail identity and media without resolving playback: %s',
+        async (scenario) => {
+            const firstVideo = videoRecord('v1')
+            const secondVideo = videoRecord(
+                scenario === 'duplicate-id' ? 'v1' : 'v2'
+            )
+            if (scenario === 'swapped-player') {
+                ;[firstVideo.video_info.url3, secondVideo.video_info.url3] = [
+                    secondVideo.video_info.url3,
+                    firstVideo.video_info.url3
+                ]
+            }
             const pic = [
                 { url3: 'https://m.qpic.cn/photoA.jpg' },
                 { url3: 'https://m.qpic.cn/photoB.jpg' },
-                videoRecord('v1')
+                firstVideo,
+                secondVideo
             ]
+            if (scenario === 'missing-video') pic.pop()
+            if (scenario === 'missing-photo') pic.shift()
             const fake = createFakeFetch([
                 ...upload('v1'),
                 ...upload('v2'),
@@ -422,34 +443,24 @@ describe('video publishing', () => {
                 imageReply('b'),
                 async (req) => {
                     const form = new URLSearchParams(await req.text())
-                    expect(form.get('richtype')).toBe('1\n3')
-                    expect(form.get('subrichtype')).toBe('1\n7')
-                    const [photos, videos] = form.get('richval')!.split('\n')
+                    expect(form.get('richtype')).toBe('1\n3\n3')
+                    expect(form.get('subrichtype')).toBe('1\n7\n7')
+                    const [photos, ...videos] = form.get('richval')!.split('\n')
                     expect(
                         photos!.split('\t').map((x) => x.split(',')[2])
                     ).toEqual(['a', 'b'])
                     expect(
-                        videos!
-                            .split('\t')
-                            .map((x) => new URLSearchParams(x).get('vid'))
+                        videos.map((x) => new URLSearchParams(x).get('vid'))
                     ).toEqual(['v1', 'v2'])
                     return jsonResponse({ data: { tid: 'post' } })
                 },
                 jsonResponse({
-                    ...post('post', 'caption'),
-                    pic: incomplete ? pic : [...pic, videoRecord('v2')]
-                }),
-                jsonResponse({
-                    data: {
-                        Videos: [
-                            { vid: 'v2', url: 'https://example.test/2.mp4' },
-                            {
-                                vid: 'other',
-                                url: 'https://example.test/no.mp4'
-                            },
-                            { vid: 'v1', url: 'https://example.test/1.mp4' }
-                        ]
-                    }
+                    ...post(
+                        'post',
+                        scenario === 'wrong-content' ? 'other' : 'caption'
+                    ),
+                    hostuin: scenario === 'wrong-author' ? '10002' : '10001',
+                    pic
                 })
             ])
             const first = clip()
@@ -460,24 +471,53 @@ describe('video publishing', () => {
             })
             first.data.fill(0)
             const result = await promise
-            expect(result.outcome).toBe(incomplete ? 'accepted' : 'verified')
+            expect(result.outcome).toBe(
+                scenario === 'complete' ? 'verified' : 'accepted'
+            )
             expect(
                 fake.calls.filter((r) => r.url.includes('emotion_cgi_publish'))
             ).toHaveLength(1)
             expect(
                 fake.calls.filter((r) => r.url.includes('video_get_data'))
-            ).toHaveLength(1)
-            if (!incomplete)
-                expect(
-                    result.post?.media
-                        .filter((m) => m.kind === 'video')
-                        .map((m) => m.url)
-                ).toEqual([
-                    'https://example.test/1.mp4',
-                    'https://example.test/2.mp4'
-                ])
+            ).toHaveLength(0)
+            if (scenario === 'complete')
+                expect(result.post).toMatchObject({
+                    id: 'post',
+                    media: [{ kind: 'image' }, { kind: 'image' }]
+                })
+            else
+                expect(result.reference).toEqual({
+                    id: 'post',
+                    authorId: '10001'
+                })
         }
     )
+
+    it('verifies video IDs without a player or media URL in the detail', async () => {
+        const fake = createFakeFetch([
+            ...upload('v1'),
+            ...upload('v2'),
+            jsonResponse({ tid: 'p' }),
+            jsonResponse({
+                ...post('p', 'caption'),
+                pic: ['v1', 'v2'].map((vid) => ({
+                    is_video: 1,
+                    video_info: {
+                        vid,
+                        url1: 'https://m.qpic.cn/' + vid + '.jpg',
+                        url3: ''
+                    }
+                }))
+            })
+        ])
+        expect(
+            await createClient(fake.fetch).publishPost({
+                content: 'caption',
+                videos: [clip(), clip()]
+            })
+        ).toMatchObject({ outcome: 'verified', post: { id: 'p', media: [] } })
+        expect(fake.calls).toHaveLength(8)
+    })
 
     it('verifies only the detail response and preserves list data for later reads', async () => {
         const video = [{ video_id: 'v1', url3: 'https://example.test/1.mp4' }]

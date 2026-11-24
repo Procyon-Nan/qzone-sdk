@@ -159,3 +159,12 @@ export function isVideoPlayer(source: string): boolean {
             /^\/(?:x|page|iframe)\//u.test(url.pathname))
     )
 }
+
+export function videoPlayerId(source: string): string {
+    const url = new URL(source)
+    if (url.hostname === 'cache.tv.qq.com' && /\.swf$/iu.test(url.pathname))
+        return url.searchParams.get('v') ?? ''
+    if (url.hostname === 'user.qzone.qq.com')
+        return /\/qzvideo\/([^/]+)$/u.exec(url.pathname)?.[1] ?? ''
+    return ''
+}

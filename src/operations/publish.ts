@@ -1,5 +1,6 @@
 import { QzoneValidationError } from '../errors.js'
 import { preparePublishImage } from '../protocol/image.js'
+import { toPublicPost } from '../protocol/types.js'
 import type { SessionState } from '../session/session.js'
 import type {
     PostMutationResult,
@@ -162,7 +163,7 @@ export class PublishOperations {
                 options.images.length &&
                 clips.length === videoIds.length &&
                 clips.every((clip, i) => clip.id === videoIds[i])
-                ? post
+                ? toPublicPost(post)
                 : null
         } catch {
             // A verification failure must not make an already-sent write look retryable.

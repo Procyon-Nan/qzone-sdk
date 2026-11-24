@@ -37,7 +37,9 @@ export class PostOperations {
         )
     }
 
-    async getPublishedDetail(target: PostReference): Promise<QzonePost | null> {
+    async getPublishedDetail(
+        target: PostReference
+    ): Promise<ProtocolPost | null> {
         const base =
             this.#cache.get(target.authorId, target.id) ??
             protocolPostFromTarget(target, target)
@@ -45,7 +47,7 @@ export class PostOperations {
         const detail = parseProtocolPost(raw, '', 'detail')
         if (detail.id !== target.id || detail.authorId !== target.authorId)
             return null
-        return this.#withVideoUrls(detail)
+        return detail
     }
 
     async #withVideoUrls(

@@ -4,6 +4,7 @@ import {
     ATTACHMENT_SOURCE_KEYS,
     isNonImageRecord,
     isVideoPlayer,
+    videoPlayerId,
     mediaKind,
     mediaName,
     imageSourceKey,
@@ -173,9 +174,11 @@ export function parseMedia(
                 'videoid'
             ])
         )
-        if (!url) return true
-        if (isVideoPlayer(url)) {
+        if (!url && !id) return true
+        if (url && isVideoPlayer(url)) {
             if (!id) return true
+            const playerId = videoPlayerId(url)
+            if (playerId && playerId !== id) return true
             url = ''
         }
         const mp4 =
