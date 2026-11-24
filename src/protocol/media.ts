@@ -91,6 +91,7 @@ const IMAGE_SOURCE_KEYS = [
     'cover',
     'coverUrl'
 ] as const
+const VIDEO_SOURCE_KEYS = [...ATTACHMENT_SOURCE_KEYS, 'url3', 'url']
 const MEDIA_SOURCE_KEYS = [...ATTACHMENT_SOURCE_KEYS, ...IMAGE_SOURCE_KEYS]
 const MARKUP_KEYS = [
     'html',
@@ -99,6 +100,13 @@ const MARKUP_KEYS = [
     'content',
     'summary'
 ] as const
+
+const ATTACHMENT_CHILDREN = new Set<string>(ATTACHMENT_CONTAINERS)
+const IMAGE_CHILDREN = new Set<string>([
+    ...IMAGE_CONTAINERS,
+    ...NESTED_CONTAINERS,
+    ...MARKUP_KEYS
+])
 
 interface MediaTarget {
     readonly postId: string
@@ -120,6 +128,55 @@ export function parseMedia(
     }
     const collector = createCollector()
 
+    // A video owns both its covers and its playback variants. Neither walker descends into it.
+    function collectVideo(record: ProtocolRecord): boolean {
+        const info = asRecord(record.video_info ?? record.videoInfo)
+        let url: string
+        let previewUrl: string
+        if (info) {
+            url = mediaSource(info, VIDEO_SOURCE_KEYS)
+            if (!url) {
+                const alternate = mediaSource(info)
+                if (alternate && mediaKind({}, alternate) === 'video')
+                    url = alternate
+            }
+            previewUrl = imageSource(record)
+        } else if ('videourl' in record || 'videourls' in record) {
+            url =
+                normalizeRemoteUrl(record.videourl) ||
+                variantUrl(record.videourls)
+            previewUrl = variantUrl(record.coverurl)
+        } else if (
+            'video_id' in record &&
+            ('url3' in record || 'url1' in record || 'pic_url' in record)
+        ) {
+            url = normalizeRemoteUrl(record.url3)
+            previewUrl =
+                photoVariantUrl(record.pic_url) || photoVariantUrl(record.url1)
+        } else {
+            return false
+        }
+        if (!url) return true
+        const metadata = info ?? record
+        const durationMs = toInteger(
+            firstValue(metadata, ['video_time', 'duration'])
+        )
+        const id = toText(
+            firstValue(metadata, ['video_id', 'videoId', 'videoid'])
+        )
+        const mp4 = /\.mp4$/iu.test(new URL(url).pathname)
+            ? { name: `${id || 'qzone-video'}.mp4`, mimeType: 'video/mp4' }
+            : {}
+        collector.add({
+            kind: 'video',
+            url,
+            ...mp4,
+            ...(previewUrl ? { previewUrl } : {}),
+            ...(durationMs > 0 ? { durationMs } : {})
+        })
+        return true
+    }
+
     const walkImages = (node: unknown, depth: number): void => {
         if (depth < 0) {
             return
@@ -136,28 +193,7 @@ export function parseMedia(
             if (!belongsTo(record, target)) {
                 continue
             }
-            const videoInfo = asRecord(record.video_info ?? record.videoInfo)
-            if (videoInfo) {
-                const source = mediaSource(videoInfo)
-                if (source) {
-                    const previewUrl = imageSource(record)
-                    const durationMs = toInteger(
-                        firstValue(videoInfo, ['video_time', 'duration'])
-                    )
-                    const videoId = toText(
-                        firstValue(videoInfo, ['video_id', 'videoId'])
-                    ).trim()
-                    collector.add({
-                        kind: 'video',
-                        url: source,
-                        name: `${videoId || 'qzone-video'}.mp4`,
-                        mimeType: 'video/mp4',
-                        ...(previewUrl ? { previewUrl } : {}),
-                        ...(durationMs > 0 ? { durationMs } : {})
-                    })
-                    continue
-                }
-            }
+            if (collectVideo(record)) continue
             if (isNonImageRecord(record)) {
                 continue
             }
@@ -182,16 +218,7 @@ export function parseMedia(
             if (depth === 0) {
                 continue
             }
-            for (const key of [...IMAGE_CONTAINERS, ...NESTED_CONTAINERS]) {
-                const child = record[key]
-                if (child !== undefined) {
-                    walkImages(child, depth - 1)
-                }
-            }
-            for (const key of MARKUP_KEYS) {
-                walkImages(record[key], depth - 1)
-            }
-            for (const child of mediaChildren(record)) {
+            for (const child of mediaChildren(record, IMAGE_CHILDREN)) {
                 walkImages(child, depth - 1)
             }
         }
@@ -215,6 +242,7 @@ export function parseMedia(
             if (!belongsTo(record, target)) {
                 continue
             }
+            if (collectVideo(record)) continue
             const source = mediaSource(record)
             const kind = source ? mediaKind(record, source) : null
             if (source && kind && kind !== 'image') {
@@ -237,10 +265,7 @@ export function parseMedia(
                     ...(kind !== 'file' && durationMs > 0 ? { durationMs } : {})
                 })
             }
-            for (const key of ATTACHMENT_CONTAINERS) {
-                walkAttachments(record[key], depth - 1)
-            }
-            for (const child of mediaChildren(record)) {
+            for (const child of mediaChildren(record, ATTACHMENT_CHILDREN)) {
                 walkAttachments(child, depth - 1)
             }
         }
@@ -251,9 +276,21 @@ export function parseMedia(
     return Object.freeze(collector.result)
 }
 
-function* mediaChildren(record: ProtocolRecord) {
+function* mediaChildren(
+    record: ProtocolRecord,
+    containers: ReadonlySet<string>
+) {
+    for (const key of containers) {
+        if (record[key] !== undefined) yield record[key]
+    }
     for (const [key, child] of Object.entries(record)) {
-        if (key !== 'photourl' && typeof child === 'object' && child !== null) {
+        if (
+            !containers.has(key) &&
+            key !== 'photourl' &&
+            key !== 'coverurl' &&
+            typeof child === 'object' &&
+            child !== null
+        ) {
             yield child
         }
     }
@@ -278,11 +315,7 @@ function createCollector(): MediaCollector {
 }
 
 function imageSource(record: ProtocolRecord): string {
-    const photoUrls: Readonly<Record<number, unknown>> | null = Array.isArray(
-        record.photourl
-    )
-        ? record.photourl
-        : asRecord(record.photourl)
+    const photoUrls = variantTable(record.photourl)
     if (photoUrls) {
         for (const key of [1, 0, 14, 11, 2, 3]) {
             const source = photoVariantUrl(photoUrls[key])
@@ -311,8 +344,25 @@ function photoVariantUrl(variant: unknown): string {
     return isPostImage(url) ? url : ''
 }
 
-function mediaSource(record: ProtocolRecord): string {
-    for (const key of MEDIA_SOURCE_KEYS) {
+function variantTable(
+    value: unknown
+): Readonly<Record<number, unknown>> | null {
+    return Array.isArray(value) ? value : asRecord(value)
+}
+
+function variantUrl(variants: unknown): string {
+    for (const item of Object.values(variantTable(variants) ?? {})) {
+        const url = normalizeRemoteUrl(asRecord(item)?.url)
+        if (url) return url
+    }
+    return ''
+}
+
+function mediaSource(
+    record: ProtocolRecord,
+    keys: readonly string[] = MEDIA_SOURCE_KEYS
+): string {
+    for (const key of keys) {
         const source = normalizeRemoteUrl(record[key])
         if (source) {
             return source

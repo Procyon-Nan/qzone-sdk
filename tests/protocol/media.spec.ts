@@ -180,6 +180,89 @@ describe('protocol media parsing', () => {
         ])
     })
 
+    it('keeps each mobile video with its own cover and ignores renditions', () => {
+        const url = 'https://photovideo.photo.qq.com/clip.mp4'
+        const cover = 'https://m.qpic.cn/cover'
+        const clip = {
+            videourl: url,
+            coverurl: { 0: { url: cover }, 1: { url: cover + '/small' } },
+            videourls: { 0: { url }, 5: { url: url + '?quality=low' } }
+        }
+        const other = {
+            ...clip,
+            videourl: url + '?clip=2',
+            coverurl: [{ url: cover + '/2' }]
+        }
+        const media = parseMedia(
+            {
+                video: [clip, other, { coverurl: clip.coverurl }],
+                pic: [{ url: cover + '/photo' }],
+                attachments: [
+                    {
+                        type: 'file',
+                        name: 'notes.pdf',
+                        download_url: 'https://example.com/notes.pdf'
+                    }
+                ]
+            },
+            TARGET
+        )
+        expect(media.map((m) => m.kind)).toEqual([
+            'image',
+            'file',
+            'video',
+            'video'
+        ])
+        expect(media.slice(2)).toMatchObject([
+            { url, previewUrl: cover },
+            { url: other.videourl, previewUrl: cover + '/2' }
+        ])
+    })
+
+    it('reads each detail video from url3 and its cover from url1', () => {
+        const clip = {
+            video_id: 'clip',
+            url1: 'https://m.qpic.cn/cover',
+            pic_url: '',
+            url3: 'https://photovideo.photo.qq.com/a.mp4'
+        }
+        const media = parseMedia(
+            { video: [{ ...clip, url3: '' }, clip] },
+            TARGET
+        )
+        expect(media).toHaveLength(1)
+        expect(media[0]).toMatchObject({
+            kind: 'video',
+            url: clip.url3,
+            previewUrl: clip.url1
+        })
+    })
+
+    it('keeps playback, cover and file addresses distinct', () => {
+        const playlist = 'https://example.com/clip.m3u8'
+        const cover = 'https://example.com/cover.jpg'
+        const file = 'https://example.com/notes.pdf'
+        const media = parseMedia(
+            {
+                video: [
+                    { videoid: 'clip', videourl: playlist },
+                    {
+                        videoid: 'no-playback',
+                        videourl: '',
+                        coverurl: [{ url: cover }],
+                        url: cover
+                    }
+                ],
+                attachments: [{ videoid: 'clip', download_url: file }]
+            },
+            TARGET
+        )
+        expect(media).toEqual([
+            { kind: 'file', url: file, name: 'notes.pdf' },
+            { kind: 'video', url: playlist }
+        ])
+    })
+
     it('normalizes video, audio and file attachments', () => {
         const media = parseMedia(
             {
