@@ -1,3 +1,5 @@
+import type { SessionInfo } from '../types.js'
+
 const HASH_MASK = 0x7fffffff
 const GTK_SEED = 5381
 
@@ -11,14 +13,27 @@ export function hash33(value: string, initial = 0): number {
     return hash
 }
 
-export function computeGtk(cookies: ReadonlyMap<string, string>): number {
+/** 返回按 SDK 优先级选中的 g_tk 凭据来源。 */
+export function gtkSourceOf(
+    cookies: ReadonlyMap<string, string>
+): SessionInfo['gtkSource'] {
     for (const key of SECRET_KEYS) {
-        const secret = cookies.get(key)
-        if (secret) {
-            return hash33(secret, GTK_SEED)
+        if (cookies.get(key)) {
+            return key
         }
     }
 
     const direct = cookies.get('g_tk')
-    return direct && /^\d+$/u.test(direct) ? Number(direct) : 0
+    return direct && /^\d+$/u.test(direct) ? 'g_tk' : 'none'
+}
+
+export function computeGtk(cookies: ReadonlyMap<string, string>): number {
+    const source = gtkSourceOf(cookies)
+    if (source === 'none') {
+        return 0
+    }
+    if (source === 'g_tk') {
+        return Number(cookies.get(source))
+    }
+    return hash33(cookies.get(source)!, GTK_SEED)
 }

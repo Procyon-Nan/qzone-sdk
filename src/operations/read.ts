@@ -1,5 +1,6 @@
 import {
     type QzoneError,
+    QzoneAuthError,
     QzoneParseError,
     QzonePermissionError,
     QzoneRateLimitError,
@@ -46,6 +47,26 @@ export class QzoneReadApi {
     constructor(session: SessionState, transport: FetchTransport) {
         this.#session = session
         this.#transport = transport
+    }
+
+    #assertLegacyPayloadSuccess(payload: unknown, endpoint: string): void {
+        try {
+            assertPayloadSuccess(payload, endpoint)
+        } catch (error) {
+            if (
+                error instanceof QzoneAuthError &&
+                error.context?.serviceCode === -3000 &&
+                !this.#session.getCookie('p_skey')
+            ) {
+                const hint =
+                    '当前会话缺少 p_skey，请重新获取包含 p_skey 的 QQ 空间 Cookie。'
+                throw new QzoneAuthError(`${error.message}；${hint}`, {
+                    cause: error,
+                    context: { ...error.context, hint }
+                })
+            }
+            throw error
+        }
     }
 
     async videoUrls(
@@ -177,7 +198,7 @@ export class QzoneReadApi {
                 ...readTransportOptions(options)
             }
         )
-        assertPayloadSuccess(payload, 'feed.legacy')
+        this.#assertLegacyPayloadSuccess(payload, 'feed.legacy')
         return parseFeedPage(payload, userId)
     }
 
@@ -231,7 +252,7 @@ export class QzoneReadApi {
                 ...readTransportOptions(options)
             }
         )
-        assertPayloadSuccess(payload, 'post.detail.legacy')
+        this.#assertLegacyPayloadSuccess(payload, 'post.detail.legacy')
         return payload
     }
 

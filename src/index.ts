@@ -50,6 +50,7 @@ export type {
     QzoneLogLevel,
     QzoneMedia,
     QzonePost,
+    QzoneShareCard,
     QzoneSession,
     QzoneSessionInput,
     QzoneTimestamp,

@@ -88,6 +88,16 @@ await client.updateSession({
 失败，内存状态不会回滚，当前调用抛出 `QzoneRequestError`，并且
 `getSessionInfo().persistencePending` 为 `true`；后续持久化成功后自动清除。
 
+### 会话凭据要求
+
+`getSessionInfo().gtkSource` 表示 SDK 当前选中的 g_tk 凭据来源，优先级依次为
+`p_skey`、`skey`、`skey2`、有效的 `g_tk` 数字值；缺少可用来源时为 `none`。
+凭据的服务端有效性由接口响应确认。
+
+传统说说列表、详情接口返回业务码 `-3000` 且当前会话缺少 `p_skey` 时，
+`QzoneAuthError` 会在保留服务端消息的基础上补充提示，并通过 `context.hint`
+建议重新获取包含 `p_skey` 的 QQ 空间 Cookie。
+
 ## 读取动态
 
 `QzoneClient` 通过判别联合明确区分当前账号、指定用户和好友动态流：
@@ -116,6 +126,25 @@ const detail = post ? await client.getPost({ post }) : null
 不透明值，只能在同一 `QzoneClient`、同一账号、同一 scope 和同一目标账号
 中继续使用。动态详情会优先复用同一实例中的列表缓存补全缺失字段，但公共
 结果不会暴露 QQ 空间内部动作参数。
+
+移动端返回的外链分享卡片通过可选字段 `post.share` 读取：
+
+```ts
+if (post?.share) {
+    const { title, summary, url, previewUrl } = post.share
+    console.log(post.content, title, summary, url, previewUrl)
+}
+```
+
+`content` 保留发布者配文，未配文时为空字符串。`share.title`、`share.summary`
+是被分享内容的标题和摘要，缺失时为空字符串；`url`、`previewUrl` 分别是可选的
+HTTP(S) 跳转地址和封面地址。分享页面链接按网页返回，封面只放在 `share` 中，
+独立上传的媒体继续放在 `media` 中。普通动态省略 `share`。
+
+当前支持已验证的 `appid=202` 移动列表 `cell_left_thumb` 与详情 `cell_original`
+结构，复用现有请求和分页。桌面 `feeds_html_module` 专属分享流尚未接入。
+同一实例读取详情时会合并列表中已有的卡片字段；也可将完整的分享对象交给另一个
+客户端的 `getPost({ post })`，继续按分享类型读取详情。
 
 `getPost()` 仅在动态详情协议通过 HTTP 404 或 QQ 业务码 `-8` 明确报告目标
 不存在时抛出 `QzoneNotFoundError`。该错误不推断动态由谁删除或为何不可访问；

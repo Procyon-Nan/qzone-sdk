@@ -17,6 +17,8 @@ export interface QzoneErrorContext {
     readonly serviceCode?: number
     readonly retryCount?: number
     readonly responseSnippet?: string
+    /** 面向调用方的可操作提示，例如"会话缺少 p_skey Cookie"。不含凭据内容。 */
+    readonly hint?: string
 }
 
 /** 公共错误构造参数。 */

@@ -6,8 +6,132 @@ import {
     parseProtocolPost
 } from '../../src/protocol/post.js'
 import { toPublicPost } from '../../src/protocol/types.js'
+import {
+    shareCard,
+    shareListPost,
+    shareDetailPost
+} from '../support/fixtures.js'
 
 describe('protocol feed parsing', () => {
+    it.each([shareListPost, shareDetailPost])(
+        'reads share metadata separately from the author text: %s',
+        (fixture) => {
+            const raw = {
+                ...fixture(),
+                original: { summary: { summary: '被分享内容' } }
+            }
+            const post = toPublicPost(parseProtocolPost(raw))
+            expect(post).toMatchObject({
+                id: 'share-1',
+                authorId: '10002',
+                content: '',
+                share: shareCard,
+                media: []
+            })
+            expect(Object.isFrozen(post.share)).toBe(true)
+            const withMedia = toPublicPost(
+                parseProtocolPost({
+                    ...raw,
+                    summary: { summary: '我的配文' },
+                    pic: [{ url3: 'https://m.qpic.cn/independent.jpg' }],
+                    video: [
+                        {
+                            video_id: 'clip',
+                            url3: 'https://example.test/clip.mp4'
+                        }
+                    ],
+                    files: [{ url: 'https://example.test/document.pdf' }]
+                })
+            )
+            expect(withMedia.content).toBe('我的配文')
+            expect(withMedia.share).toEqual(shareCard)
+            expect(withMedia.media).toHaveLength(3)
+            expect(withMedia.media.map((item) => item.kind).sort()).toEqual([
+                'file',
+                'image',
+                'video'
+            ])
+            expect(
+                withMedia.media.some(
+                    (item) => item.url === shareCard.previewUrl
+                )
+            ).toBe(false)
+        }
+    )
+
+    it('merges only supplied share fields and preserves the cached card on sparse details', () => {
+        const list = parseProtocolPost(shareListPost())
+        const updated = mergeProtocolPost(list, {
+            cell_id: { cellid: 'share-1' },
+            cell_original: {
+                cell_summary: { summary: '' }
+            }
+        })
+        expect(toPublicPost(updated).share).toEqual({
+            ...shareCard,
+            summary: ''
+        })
+        expect(
+            toPublicPost(
+                mergeProtocolPost(updated, { cell_id: { cellid: 'share-1' } })
+            ).share
+        ).toEqual(toPublicPost(updated).share)
+        const renamed = mergeProtocolPost(updated, {
+            cell_original: { cell_title: { title: '新标题' } }
+        })
+        expect(toPublicPost(renamed).share).toEqual({
+            ...shareCard,
+            title: '新标题',
+            summary: ''
+        })
+    })
+
+    it('keeps partial share information and omits invalid links and empty cards', () => {
+        const base = { appid: 202, tid: 'partial', uin: '10002' }
+        const partial = toPublicPost(
+            parseProtocolPost({
+                ...base,
+                cell_left_thumb: {
+                    title: '标题',
+                    actionturl: 'javascript:alert(1)'
+                }
+            })
+        )
+        expect(partial.share).toEqual({ title: '标题', summary: '' })
+        for (const encoded of ['%ZZ', 'javascript%3Aalert(1)']) {
+            const post = toPublicPost(
+                parseProtocolPost({
+                    ...base,
+                    cell_original: {
+                        cell_summary: {
+                            summary:
+                                '摘要[em]e10007[/em]{url:' +
+                                encoded +
+                                ',text:网页链接}'
+                        }
+                    }
+                })
+            )
+            expect(post.share).toEqual({ title: '', summary: '摘要' })
+        }
+        expect(
+            toPublicPost(parseProtocolPost({ ...base, cell_left_thumb: {} }))
+        ).not.toHaveProperty('share')
+        expect(
+            toPublicPost(
+                parseProtocolPost({
+                    ...base,
+                    cell_left_thumb: { title: '', summary: '' }
+                })
+            )
+        ).not.toHaveProperty('share')
+        expect(
+            toPublicPost(
+                parseProtocolPost({ ...shareListPost(), comm: { appid: 311 } })
+            )
+        ).not.toHaveProperty('share')
+    })
+
     it('normalizes a top-level legacy array and filters ignored items', () => {
         const page = parseFeedPage([
             { appid: 6600, key: 'advertisement_1', summary: '广告' },
