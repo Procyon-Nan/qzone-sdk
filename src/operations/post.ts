@@ -13,6 +13,7 @@ import type { ProtocolPost } from '../protocol/types.js'
 import { toPublicPost } from '../protocol/types.js'
 import type {
     GetPostOptions,
+    PostReference,
     PostTarget,
     QzoneId,
     QzonePost
@@ -29,10 +30,43 @@ export class PostOperations {
         this.#cache = cache
     }
 
-    async getPost(options: GetPostOptions): Promise<QzonePost> {
-        return toPublicPost(
-            await this.resolvePost(options.post, options.signal, true)
+    async getPost({ post, signal }: GetPostOptions): Promise<QzonePost> {
+        return this.#withVideoUrls(
+            await this.resolvePost(post, signal, true),
+            signal
         )
+    }
+
+    async getPublishedDetail(
+        target: PostReference
+    ): Promise<ProtocolPost | null> {
+        const base =
+            this.#cache.get(target.authorId, target.id) ??
+            protocolPostFromTarget(target, target)
+        const raw = await this.#readDetail(base)
+        const detail = parseProtocolPost(raw, '', 'detail')
+        if (detail.id !== target.id || detail.authorId !== target.authorId)
+            return null
+        return detail
+    }
+
+    async #withVideoUrls(
+        post: ProtocolPost,
+        signal?: AbortSignal
+    ): Promise<QzonePost> {
+        const missing = post.media.flatMap((m) =>
+            m.kind === 'video' && !m.url && m.id ? [m.id] : []
+        )
+        if (!missing.length) return toPublicPost(post)
+        const urls = await this.#read.videoUrls(post.authorId, missing, signal)
+        return toPublicPost({
+            ...post,
+            media: post.media.map((m) => {
+                if (m.kind !== 'video' || m.url || !m.id) return m
+                const url = urls.get(m.id)
+                return url ? Object.freeze({ ...m, url }) : m
+            })
+        })
     }
 
     getCachedPost(post: PostTarget): ProtocolPost | undefined {
@@ -51,29 +85,28 @@ export class PostOperations {
             return cached
         }
         const base = cached ?? protocolPostFromTarget(post, target)
-        let record
+        const merged = mergeProtocolPost(
+            base,
+            await this.#readDetail(base, signal)
+        )
+        this.#cache.set(merged)
+        return merged
+    }
 
+    async #readDetail(base: ProtocolPost, signal?: AbortSignal) {
         if (base.action.appId === 311) {
             try {
-                record = await this.#legacyDetail(target, signal)
+                return await this.#legacyDetail(base, signal)
             } catch (error) {
-                if (!shouldFallbackRead(error)) {
-                    throw error
-                }
+                if (!shouldFallbackRead(error)) throw error
                 this.#read.logReadFallback(
                     'post.detail.legacy',
                     'post.detail.h5',
                     error
                 )
-                record = await this.#h5Detail(base, target, signal)
             }
-        } else {
-            record = await this.#h5Detail(base, target, signal)
         }
-
-        const merged = mergeProtocolPost(base, record)
-        this.#cache.set(merged)
-        return merged
+        return this.#h5Detail(base, signal)
     }
 
     deleteCachedPost(post: PostTarget): void {
@@ -102,7 +135,6 @@ export class PostOperations {
 
     async #h5Detail(
         post: ProtocolPost,
-        target: { readonly id: QzoneId; readonly authorId: QzoneId },
         signal?: AbortSignal
     ): Promise<NonNullable<ReturnType<typeof findPostDetail>>> {
         const tokenPage = await this.#read.ensureToken(post.authorId, signal)
@@ -111,9 +143,9 @@ export class PostOperations {
         }
         try {
             const detail = await this.#read.h5Detail(post, signal)
-            return requirePostDetail(detail, target)
+            return requirePostDetail(detail, post)
         } catch (error) {
-            throw this.#mapDetailError(error, target)
+            throw this.#mapDetailError(error, post)
         }
     }
 

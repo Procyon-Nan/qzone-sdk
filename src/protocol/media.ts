@@ -1,16 +1,20 @@
 import type { QzoneMedia } from '../types.js'
 import { extractHtmlAttribute } from './html.js'
 import {
+    ATTACHMENT_SOURCE_KEYS,
     isNonImageRecord,
+    isVideoPlayer,
+    videoPlayerId,
     mediaKind,
     mediaName,
     imageSourceKey,
     normalizeRemoteUrl,
     photoIdentity
 } from './media-url.js'
-import { extractAuthorId, extractPostId } from './post-fields.js'
+import { extractPostId, resolvePostAuthor } from './post-fields.js'
 import {
     asRecord,
+    asRecords,
     firstValue,
     type ProtocolRecord,
     toInteger,
@@ -89,22 +93,8 @@ const IMAGE_SOURCE_KEYS = [
     'cover',
     'coverUrl'
 ] as const
-const MEDIA_SOURCE_KEYS = [
-    'download_url',
-    'downloadUrl',
-    'play_url',
-    'playUrl',
-    'video_url',
-    'videoUrl',
-    'audio_url',
-    'audioUrl',
-    'media_url',
-    'mediaUrl',
-    'file_url',
-    'fileUrl',
-    'source',
-    ...IMAGE_SOURCE_KEYS
-] as const
+const VIDEO_SOURCE_KEYS = [...ATTACHMENT_SOURCE_KEYS, 'url3', 'url']
+const MEDIA_SOURCE_KEYS = [...ATTACHMENT_SOURCE_KEYS, ...IMAGE_SOURCE_KEYS]
 const MARKUP_KEYS = [
     'html',
     'htmlContent',
@@ -112,6 +102,13 @@ const MARKUP_KEYS = [
     'content',
     'summary'
 ] as const
+
+const ATTACHMENT_CHILDREN = new Set<string>(ATTACHMENT_CONTAINERS)
+const IMAGE_CHILDREN = new Set<string>([
+    ...IMAGE_CONTAINERS,
+    ...NESTED_CONTAINERS,
+    ...MARKUP_KEYS
+])
 
 interface MediaTarget {
     readonly postId: string
@@ -133,6 +130,75 @@ export function parseMedia(
     }
     const collector = createCollector()
 
+    // A video owns both its covers and its playback variants. Neither walker descends into it.
+    function collectVideo(record: ProtocolRecord): boolean {
+        const info =
+            asRecord(record.video_info ?? record.videoInfo) ??
+            (toInteger(record.videoflag) ? asRecord(record.videodata) : null)
+        let url: string
+        let previewUrl: string
+        if (info) {
+            url = playbackSource(info, VIDEO_SOURCE_KEYS)
+            if (!url) {
+                const alternate = mediaSource(info)
+                if (alternate && mediaKind({}, alternate) === 'video')
+                    url = alternate
+            }
+            previewUrl =
+                photoVariantUrl(info.url1) ||
+                variantUrl(info.coverurl) ||
+                imageSource(record)
+        } else if ('videourl' in record || 'videourls' in record) {
+            url = playbackSource(record)
+            previewUrl = variantUrl(record.coverurl)
+        } else if (
+            'video_id' in record &&
+            ('url3' in record || 'url1' in record || 'pic_url' in record)
+        ) {
+            url = normalizeRemoteUrl(record.url3)
+            previewUrl =
+                photoVariantUrl(record.pic_url) || photoVariantUrl(record.url1)
+        } else {
+            return false
+        }
+        const metadata = info ?? record
+        const durationMs = toInteger(
+            firstValue(metadata, ['video_time', 'duration'])
+        )
+        const id = toText(
+            firstValue(metadata, [
+                'vid',
+                'sVid',
+                'video_id',
+                'videoId',
+                'videoid'
+            ])
+        )
+        if (!url && !id) return true
+        if (url && isVideoPlayer(url)) {
+            if (!id) return true
+            const playerId = videoPlayerId(url)
+            if (playerId && playerId !== id) return true
+            url = ''
+        }
+        const mp4 =
+            url && /\.mp4$/iu.test(new URL(url).pathname)
+                ? { name: `${id || 'qzone-video'}.mp4`, mimeType: 'video/mp4' }
+                : {}
+        collector.add(
+            {
+                kind: 'video',
+                ...(id ? { id } : {}),
+                url,
+                ...mp4,
+                ...(previewUrl ? { previewUrl } : {}),
+                ...(durationMs > 0 ? { durationMs } : {})
+            },
+            id || undefined
+        )
+        return true
+    }
+
     const walkImages = (node: unknown, depth: number): void => {
         if (depth < 0) {
             return
@@ -145,37 +211,16 @@ export function parseMedia(
             }
             return
         }
-        for (const record of nodeRecords(node)) {
+        for (const record of asRecords(node)) {
             if (!belongsTo(record, target)) {
                 continue
             }
-            const videoInfo = asRecord(record.video_info ?? record.videoInfo)
-            if (videoInfo) {
-                const source = mediaSource(videoInfo)
-                if (source) {
-                    const previewUrl = imageSource(record)
-                    const durationMs = toInteger(
-                        firstValue(videoInfo, ['video_time', 'duration'])
-                    )
-                    const videoId = toText(
-                        firstValue(videoInfo, ['video_id', 'videoId'])
-                    ).trim()
-                    collector.add({
-                        kind: 'video',
-                        url: source,
-                        name: `${videoId || 'qzone-video'}.mp4`,
-                        mimeType: 'video/mp4',
-                        ...(previewUrl ? { previewUrl } : {}),
-                        ...(durationMs > 0 ? { durationMs } : {})
-                    })
-                    continue
-                }
-            }
+            if (collectVideo(record)) continue
             if (isNonImageRecord(record)) {
                 continue
             }
             const source = imageSource(record)
-            if (source && isPostImage(source)) {
+            if (source) {
                 const width = toInteger(
                     firstValue(record, ['origin_width', 'width'])
                 )
@@ -195,19 +240,8 @@ export function parseMedia(
             if (depth === 0) {
                 continue
             }
-            for (const key of [...IMAGE_CONTAINERS, ...NESTED_CONTAINERS]) {
-                const child = record[key]
-                if (child !== undefined) {
-                    walkImages(child, depth - 1)
-                }
-            }
-            for (const key of MARKUP_KEYS) {
-                walkImages(record[key], depth - 1)
-            }
-            for (const child of Object.values(record)) {
-                if (typeof child === 'object' && child !== null) {
-                    walkImages(child, depth - 1)
-                }
+            for (const child of mediaChildren(record, IMAGE_CHILDREN)) {
+                walkImages(child, depth - 1)
             }
         }
     }
@@ -226,13 +260,19 @@ export function parseMedia(
         if (depth < 0) {
             return
         }
-        for (const record of nodeRecords(node)) {
+        for (const record of asRecords(node)) {
             if (!belongsTo(record, target)) {
                 continue
             }
+            if (collectVideo(record)) continue
             const source = mediaSource(record)
             const kind = source ? mediaKind(record, source) : null
-            if (source && kind && kind !== 'image') {
+            if (
+                source &&
+                kind &&
+                kind !== 'image' &&
+                !(kind === 'video' && isVideoPlayer(source))
+            ) {
                 const name = mediaName(record, source)
                 const mimeType = toText(
                     firstValue(record, ['mime_type', 'content_type', 'mime'])
@@ -252,13 +292,8 @@ export function parseMedia(
                     ...(kind !== 'file' && durationMs > 0 ? { durationMs } : {})
                 })
             }
-            for (const key of ATTACHMENT_CONTAINERS) {
-                walkAttachments(record[key], depth - 1)
-            }
-            for (const child of Object.values(record)) {
-                if (typeof child === 'object' && child !== null) {
-                    walkAttachments(child, depth - 1)
-                }
+            for (const child of mediaChildren(record, ATTACHMENT_CHILDREN)) {
+                walkAttachments(child, depth - 1)
             }
         }
     }
@@ -268,28 +303,52 @@ export function parseMedia(
     return Object.freeze(collector.result)
 }
 
-function nodeRecords(value: unknown): readonly ProtocolRecord[] {
-    if (Array.isArray(value)) {
-        return value.flatMap((item) => {
-            const record = asRecord(item)
-            return record ? [record] : []
-        })
+function* mediaChildren(
+    record: ProtocolRecord,
+    containers: ReadonlySet<string>
+) {
+    for (const key of containers) {
+        if (record[key] !== undefined) yield record[key]
     }
-    const record = asRecord(value)
-    return record ? [record] : []
+    for (const [key, child] of Object.entries(record)) {
+        if (
+            !containers.has(key) &&
+            key !== 'photourl' &&
+            key !== 'coverurl' &&
+            key !== 'videodata' &&
+            typeof child === 'object' &&
+            child !== null
+        ) {
+            yield child
+        }
+    }
 }
 
 function createCollector(): MediaCollector {
     const result: QzoneMedia[] = []
-    const seen = new Set<string>()
+    const positions = new Map<string, number>()
     const seenSources = new Set<string>()
     return {
         result,
         add: (media, identity) => {
             const key = `${media.kind}:${identity ?? imageSourceKey(media.url)}`
-            const sourceKey = `${media.kind}:${imageSourceKey(media.url)}`
-            if (!seen.has(key) && !seenSources.has(sourceKey)) {
-                seen.add(key)
+            const sourceKey = media.url
+                ? `${media.kind}:${imageSourceKey(media.url)}`
+                : key
+            const index = positions.get(key)
+            if (index !== undefined) {
+                const previous = result[index]!
+                if (
+                    previous.kind === 'video' &&
+                    !previous.url &&
+                    media.kind === 'video' &&
+                    media.url
+                ) {
+                    result[index] = Object.freeze({ ...previous, ...media })
+                    seenSources.add(sourceKey)
+                }
+            } else if (!seenSources.has(sourceKey)) {
+                positions.set(key, result.length)
                 seenSources.add(sourceKey)
                 result.push(Object.freeze(media))
             }
@@ -298,11 +357,10 @@ function createCollector(): MediaCollector {
 }
 
 function imageSource(record: ProtocolRecord): string {
-    const photoUrls = asRecord(record.photourl)
+    const photoUrls = variantTable(record.photourl)
     if (photoUrls) {
-        for (const key of ['1', '0', '14', '11', '2', '3']) {
-            const item = asRecord(photoUrls[key])
-            const source = normalizeRemoteUrl(item?.url ?? photoUrls[key])
+        for (const key of [1, 0, 14, 11, 2, 3]) {
+            const source = photoVariantUrl(photoUrls[key])
             if (source) {
                 return source
             }
@@ -310,6 +368,12 @@ function imageSource(record: ProtocolRecord): string {
     }
     for (const key of IMAGE_SOURCE_KEYS) {
         const source = normalizeRemoteUrl(record[key])
+        if (source && isPostImage(source)) {
+            return source
+        }
+    }
+    for (const variant of Object.values(photoUrls ?? {})) {
+        const source = photoVariantUrl(variant)
         if (source) {
             return source
         }
@@ -317,8 +381,45 @@ function imageSource(record: ProtocolRecord): string {
     return ''
 }
 
-function mediaSource(record: ProtocolRecord): string {
-    for (const key of MEDIA_SOURCE_KEYS) {
+function photoVariantUrl(variant: unknown): string {
+    const url = normalizeRemoteUrl(asRecord(variant)?.url ?? variant)
+    return isPostImage(url) ? url : ''
+}
+
+function variantTable(
+    value: unknown
+): Readonly<Record<number, unknown>> | null {
+    return Array.isArray(value) ? value : asRecord(value)
+}
+
+function variantUrl(variants: unknown): string {
+    for (const item of Object.values(variantTable(variants) ?? {})) {
+        const url = normalizeRemoteUrl(asRecord(item)?.url)
+        if (url) return url
+    }
+    return ''
+}
+
+function playbackSource(
+    record: ProtocolRecord,
+    keys: readonly string[] = []
+): string {
+    const candidates = [
+        ...keys.map((key) => normalizeRemoteUrl(record[key])),
+        normalizeRemoteUrl(record.videourl),
+        ...Object.values(variantTable(record.videourls) ?? {}).map((v) =>
+            normalizeRemoteUrl(asRecord(v)?.url)
+        ),
+        normalizeRemoteUrl(record.actionurl)
+    ].filter(Boolean)
+    return candidates.find((url) => !isVideoPlayer(url)) ?? candidates[0] ?? ''
+}
+
+function mediaSource(
+    record: ProtocolRecord,
+    keys: readonly string[] = MEDIA_SOURCE_KEYS
+): string {
+    for (const key of keys) {
         const source = normalizeRemoteUrl(record[key])
         if (source) {
             return source
@@ -364,6 +465,6 @@ function belongsTo(record: ProtocolRecord, target: MediaTarget): boolean {
     if (postId && target.postId && postId !== target.postId) {
         return false
     }
-    const authorId = extractAuthorId(record)
+    const authorId = resolvePostAuthor(record).id
     return !(authorId && target.authorId && authorId !== target.authorId)
 }

@@ -16,6 +16,7 @@ import {
     type MutationReceipt
 } from '../protocol/mutation.js'
 import {
+    publishMediaForm,
     parsePublishReceipt,
     parseUploadedPhoto,
     type PublishReceipt,
@@ -31,6 +32,8 @@ import { parseResponseData } from '../transport/response.js'
 import type { TransportEndpoint } from '../transport/types.js'
 import type { ProtocolPost } from '../protocol/types.js'
 
+import { uploadVideo, type PreparedVideo } from './video-upload.js'
+
 export class QzoneWriteApi {
     readonly #session: SessionState
     readonly #transport: FetchTransport
@@ -38,6 +41,10 @@ export class QzoneWriteApi {
     constructor(session: SessionState, transport: FetchTransport) {
         this.#session = session
         this.#transport = transport
+    }
+
+    uploadVideo(video: PreparedVideo, signal?: AbortSignal) {
+        return uploadVideo(this.#transport, this.#session, video, signal)
     }
 
     async uploadImage(
@@ -92,6 +99,7 @@ export class QzoneWriteApi {
     async publishPost(
         content: string,
         photos: readonly UploadedPhoto[],
+        videoIds: readonly string[],
         signal?: AbortSignal
     ): Promise<PublishReceipt> {
         const accountId = this.#requireAccountId()
@@ -110,23 +118,10 @@ export class QzoneWriteApi {
                         to_sign: 0,
                         hostuin: accountId,
                         code_version: 1,
-                        richval: photos
-                            .map((photo) => photo.richval)
-                            .join('\t'),
+                        ...publishMediaForm(accountId, photos, videoIds),
                         issyncweibo: 0,
                         format: 'json',
-                        qzreferrer: `https://user.qzone.qq.com/${accountId}`,
-                        ...(photos.length > 0
-                            ? {
-                                  richtype: 1,
-                                  subrichtype: 1,
-                                  pic_bo: photos
-                                      .map((photo) => photo.picBo)
-                                      .filter(Boolean)
-                                      .join(','),
-                                  pic_template: ''
-                              }
-                            : {})
+                        qzreferrer: `https://user.qzone.qq.com/${accountId}`
                     },
                     signal
                 }

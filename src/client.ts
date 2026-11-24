@@ -1,5 +1,9 @@
 import { QzoneValidationError } from './errors.js'
-import { clientClosedError, WriteQueue } from './internal/write-queue.js'
+import {
+    clientClosedError,
+    writeCancelled,
+    WriteQueue
+} from './internal/write-queue.js'
 import { FeedOperations } from './operations/feed.js'
 import { MutationOperations } from './operations/mutation.js'
 import { PostCache } from './operations/post-cache.js'
@@ -90,25 +94,20 @@ export class QzoneClient {
     }
 
     /**
-     * 发布文字、图片或图文动态。
+     * 发布正文、图片和视频。
      *
      * 返回 `unknown` 表示请求发出后无法确认最终状态，调用方不得直接重试。
      */
-    publishPost(options: PublishPostOptions): Promise<PostMutationResult> {
+    async publishPost(
+        options: PublishPostOptions
+    ): Promise<PostMutationResult> {
+        this.#assertOpen()
         const signal = operationSignal(options)
-        if (this.#writes.closed || signal?.aborted) {
-            return this.#writes.run(signal, () =>
-                this.#publish.publishPost(options)
-            )
-        }
-        try {
-            const snapshot = snapshotPublishOptions(options)
-            return this.#writes.run(signal, () =>
-                this.#publish.publishPost(snapshot)
-            )
-        } catch (error) {
-            return Promise.reject(error)
-        }
+        if (signal?.aborted) throw writeCancelled()
+        const snapshot = snapshotPublishOptions(options)
+        return this.#writes.run(signal, () =>
+            this.#publish.publishPost(snapshot)
+        )
     }
 
     /** 发表评论；返回 `unknown` 时不得直接重复提交。 */

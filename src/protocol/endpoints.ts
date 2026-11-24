@@ -1,11 +1,16 @@
 import type { QzoneId } from '../types.js'
 import type { TransportEndpoint } from '../transport/types.js'
 
+const MOBILE_USER_AGENT =
+    'Mozilla/5.0 (Linux; Android 13; Pixel 7) ' +
+    'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36'
+
 export function indexEndpoint(accountId: QzoneId): TransportEndpoint {
     return readEndpoint(
         'feed.index',
         'https://h5.qzone.qq.com/mqzone/index',
-        `https://user.qzone.qq.com/${accountId}`
+        `https://user.qzone.qq.com/${accountId}`,
+        { userAgent: MOBILE_USER_AGENT }
     )
 }
 
@@ -13,25 +18,26 @@ export function profileEndpoint(userId: QzoneId): TransportEndpoint {
     return readEndpoint(
         'feed.profile',
         'https://h5.qzone.qq.com/mqzone/profile',
-        `https://user.qzone.qq.com/${userId}`
+        `https://user.qzone.qq.com/${userId}`,
+        { userAgent: MOBILE_USER_AGENT }
     )
 }
 
 export function activeFeedsEndpoint(accountId: QzoneId): TransportEndpoint {
-    return tokenEndpoint(
+    return readEndpoint(
         'feed.active',
         'https://h5.qzone.qq.com/webapp/json/mqzone_feeds/getActiveFeeds',
-        accountId,
-        `https://user.qzone.qq.com/${accountId}`
+        `https://user.qzone.qq.com/${accountId}`,
+        { userAgent: MOBILE_USER_AGENT, tokenAccountId: accountId }
     )
 }
 
 export function profileFeedsEndpoint(userId: QzoneId): TransportEndpoint {
-    return tokenEndpoint(
+    return readEndpoint(
         'feed.profile.more',
         'https://mobile.qzone.qq.com/get_feeds',
-        userId,
-        `https://user.qzone.qq.com/${userId}`
+        `https://user.qzone.qq.com/${userId}`,
+        { userAgent: MOBILE_USER_AGENT, tokenAccountId: userId }
     )
 }
 
@@ -40,7 +46,7 @@ export function legacyFeedsEndpoint(userId: QzoneId): TransportEndpoint {
         'feed.legacy',
         'https://user.qzone.qq.com/proxy/domain/taotao.qq.com/cgi-bin/emotion_cgi_msglist_v6',
         `https://user.qzone.qq.com/${userId}`,
-        'https://user.qzone.qq.com'
+        { origin: 'https://user.qzone.qq.com' }
     )
 }
 
@@ -49,7 +55,7 @@ export function recentFeedsEndpoint(accountId: QzoneId): TransportEndpoint {
         'feed.recent',
         'https://user.qzone.qq.com/proxy/domain/ic2.qzone.qq.com/cgi-bin/feeds/feeds3_html_more',
         `https://user.qzone.qq.com/${accountId}`,
-        'https://user.qzone.qq.com'
+        { origin: 'https://user.qzone.qq.com' }
     )
 }
 
@@ -61,7 +67,7 @@ export function legacyDetailEndpoint(
         'post.detail.legacy',
         'https://h5.qzone.qq.com/proxy/domain/taotao.qq.com/cgi-bin/emotion_cgi_msgdetail_v6',
         `https://user.qzone.qq.com/${authorId}/mood/${postId}`,
-        'https://user.qzone.qq.com'
+        { origin: 'https://user.qzone.qq.com' }
     )
 }
 
@@ -69,11 +75,35 @@ export function h5DetailEndpoint(
     authorId: QzoneId,
     postId: QzoneId
 ): TransportEndpoint {
-    return tokenEndpoint(
+    return readEndpoint(
         'post.detail.h5',
         'https://h5.qzone.qq.com/webapp/json/mqzone_detail/shuoshuo',
-        authorId,
-        `https://user.qzone.qq.com/${authorId}/mood/${postId}`
+        `https://user.qzone.qq.com/${authorId}/mood/${postId}`,
+        { tokenAccountId: authorId }
+    )
+}
+
+export function videoUploadEndpoint(checksum?: string): TransportEndpoint {
+    const path = checksum ? 'FileBatchControl/' + checksum : 'FileUploadVideo'
+    const origin = 'https://h5.qzone.qq.com'
+    return {
+        id: checksum ? 'post.video.control' : 'post.video.slice',
+        method: 'POST',
+        operation: 'write',
+        authentication: 'required',
+        url: origin + '/webapp/json/sliceUpload/' + path,
+        origin,
+        referer: origin + '/',
+        redirect: 'none'
+    }
+}
+
+export function videoIndexEndpoint(author: QzoneId): TransportEndpoint {
+    return readEndpoint(
+        'video.list',
+        'https://user.qzone.qq.com/proxy/domain/taotao.qq.com/cgi-bin/video_get_data',
+        'https://user.qzone.qq.com/' + author,
+        { origin: 'https://user.qzone.qq.com' }
     )
 }
 
@@ -151,7 +181,10 @@ function readEndpoint(
     id: string,
     url: string,
     referer: string,
-    origin?: string
+    options: Pick<
+        TransportEndpoint,
+        'origin' | 'userAgent' | 'tokenAccountId'
+    > = {}
 ): TransportEndpoint {
     return Object.freeze({
         id,
@@ -161,20 +194,8 @@ function readEndpoint(
         authentication: 'required',
         includeGtk: true,
         referer,
-        ...(origin ? { origin } : {}),
+        ...options,
         redirect: 'qq'
-    })
-}
-
-function tokenEndpoint(
-    id: string,
-    url: string,
-    tokenAccountId: QzoneId,
-    referer: string
-): TransportEndpoint {
-    return Object.freeze({
-        ...readEndpoint(id, url, referer),
-        tokenAccountId
     })
 }
 

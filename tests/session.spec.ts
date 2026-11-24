@@ -6,6 +6,24 @@ import { SessionState } from '../src/session/session.js'
 const NOW = '2026-08-12T08:00:00.000Z'
 
 describe('Session state', () => {
+    it('reports the selected g_tk source after each session update', async () => {
+        const client = new QzoneClient({ session: { cookies: 'uin=o10001' } })
+        for (const [cookies, source] of [
+            ['p_skey=a; skey=b; skey2=c; g_tk=123', 'p_skey'],
+            ['skey=b; skey2=c; g_tk=123', 'skey'],
+            ['skey2=c; g_tk=123', 'skey2'],
+            ['g_tk=123', 'g_tk'],
+            ['gtk=456', 'g_tk'],
+            ['g_tk=invalid', 'none'],
+            ['', 'none']
+        ]) {
+            await client.updateSession({ cookies: `uin=o10001; ${cookies}` })
+            expect(client.getSessionInfo().gtkSource).toBe(source)
+        }
+        await client.close()
+        expect(client.getSessionInfo().gtkSource).toBe('none')
+    })
+
     it('constructs a credential-free info view and isolated snapshot', () => {
         const input = {
             accountId: '10001',

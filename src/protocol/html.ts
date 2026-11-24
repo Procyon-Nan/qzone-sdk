@@ -29,12 +29,18 @@ export function decodeHtmlEntities(value: string): string {
 }
 
 export function htmlToText(value: string): string {
-    return decodeHtmlEntities(
-        value
-            .replace(/<\s*br\s*\/?\s*>/giu, '\n')
-            .replace(/<\/\s*(?:p|div|li|tr)\s*>/giu, '\n')
-            .replace(/<[^>]+>/gu, '')
+    return normalizeTextWhitespace(
+        decodeHtmlEntities(
+            value
+                .replace(/<\s*br\s*\/?\s*>/giu, '\n')
+                .replace(/<\/\s*(?:p|div|li|tr)\s*>/giu, '\n')
+                .replace(/<[^>]+>/gu, '')
+        )
     )
+}
+
+export function normalizeTextWhitespace(value: string): string {
+    return value
         .replace(/[ \t\r\f\v]+/gu, ' ')
         .replace(/ *\n */gu, '\n')
         .replace(/\n{3,}/gu, '\n\n')

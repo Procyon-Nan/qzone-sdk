@@ -17,7 +17,7 @@
 
 - 管理 QQ 登录态、Cookie 和 Token；
 - 读取动态列表和动态详情；
-- 发布文字及图片动态；
+- 发布正文、图片及 MP4 视频动态；
 - 发表评论；
 - 回复评论；
 - 点赞和取消点赞；
@@ -29,7 +29,7 @@
 调用方通过 `onSessionChange` 回调负责。
 
 登录获取、浏览器运行时、持久化实现、框架适配器、WebUI、命令、LLM 与
-自动化业务不属于 SDK 职责；视频发布、访客系统和相册管理也不属于第一阶段
+自动化业务不属于 SDK 职责；访客系统和相册管理也不属于第一阶段
 范围。
 
 ## 安装
@@ -90,11 +90,13 @@ await client.updateSession({
 
 ### 会话凭据要求
 
-说说类接口（`emotion_cgi_*`，包括 `listFeeds` 的 legacy 路径与动态详情）只接受
-`p_skey` 派生的 g_tk；仅凭 `skey` 构造的会话会在这些接口上得到业务码 -3000
-（`QzoneAuthError`，错误 context 的 `hint` 字段会说明这一点）。请确保登录闭环
-产出包含 `p_skey` 的完整 Cookie。`getSessionInfo().gtkSource` 可用于在调用前
-自查当前 g_tk 的派生来源。
+`getSessionInfo().gtkSource` 表示 SDK 当前选中的 g_tk 凭据来源，优先级依次为
+`p_skey`、`skey`、`skey2`、有效的 `g_tk` 数字值；缺少可用来源时为 `none`。
+凭据的服务端有效性由接口响应确认。
+
+传统说说列表、详情接口返回业务码 `-3000` 且当前会话缺少 `p_skey` 时，
+`QzoneAuthError` 会在保留服务端消息的基础上补充提示，并通过 `context.hint`
+建议重新获取包含 `p_skey` 的 QQ 空间 Cookie。
 
 ## 读取动态
 
@@ -131,9 +133,9 @@ const detail = post ? await client.getPost({ post }) : null
 
 ## 发布动态
 
-`publishPost()` 支持纯文字、纯图片或图文动态。图片输入只接受内存中的
-`Uint8Array`、`ArrayBuffer` 或 `Blob`，SDK 会复制输入并校验真实文件签名
-和尺寸；支持 JPEG、PNG、GIF、BMP 和 WebP，单次最多九张：
+`publishPost()` 接受正文、独立图片和 MP4 视频。媒体输入接受内存中的
+`Uint8Array`、`ArrayBuffer` 或 `Blob`，SDK 在入队前复制可变字节。图片按文件签名和尺寸校验，
+支持 JPEG、PNG、GIF、BMP 和 WebP，单次最多九张：
 
 ```ts
 import { readFile } from 'node:fs/promises'
@@ -151,11 +153,27 @@ const result = await client.publishPost({
 })
 ```
 
+视频使用可选的 `videos` 数组，每项提供文件名和原始字节。SDK 当前上传原视频，时长传 `0`，未上传封面：
+
+```ts
+const result = await client.publishPost({
+    content: '今天的风景',
+    images: [{ name: 'park.jpg', data: await readFile('park.jpg') }],
+    videos: [{ name: 'walk.mp4', data: await readFile('walk.mp4') }]
+})
+```
+
+每次调用最多提交一条说说。图片在同一媒体组中按输入顺序排列，每段视频单独占一组。含视频时，详情读回的动态 ID、作者、正文、独立图片数量和全部视频标识按顺序与请求一致，就返回 `verified`。核验直接使用详情中的素材记录，视频尚无媒体直链时也可确认发布成功；缺项或 ID 错配时保留 `accepted`，不重复发布。
+
+发布核验不请求视频索引或下载视频。发布结果中的 `post.media` 沿用公共读取格式，只包含具备媒体地址的条目；需要读取视频时，调用 `getPost()` 按作者和视频 ID 查询直链。播放器 ID 与记录 ID 冲突的条目不返回，列表读取不为视频额外请求。
+
+2026-11-24 的真实账号测试中，按视频分组后，两个详情接口均返回同一条动态的两张独立图片和两个正确对应的视频 ID，修复了原先多视频合并、ID 与播放器错配的问题，满足上述素材完整送达标准。该次读回的封面为默认占位图，视频直链读取与播放单独作为读取能力核查。
+
 正文会原样发送，不会由 SDK 清洗或截断。图片最短边须至少为 16 像素，
 多图上传的并发数最多为五。最终发布请求不会自动重试。
 
 发布结果的 `outcome` 用于区分可证明的状态：`verified` 表示已读回目标动态，
-`accepted` 表示服务端明确接受但尚未读回，`unknown` 表示请求发送后无法确认
+`accepted` 表示服务端明确接受但尚未完成读回核验，`unknown` 表示请求发送后无法确认
 是否成功。调用方不得把 `unknown` 当作失败后直接重试，否则可能产生重复动态。
 
 ## 评论、点赞与删除

@@ -1,6 +1,22 @@
 import { decodeHtmlEntities } from './html.js'
 import { firstValue, type ProtocolRecord, toBoolean, toText } from './value.js'
 
+export const ATTACHMENT_SOURCE_KEYS = [
+    'download_url',
+    'downloadUrl',
+    'play_url',
+    'playUrl',
+    'video_url',
+    'videoUrl',
+    'audio_url',
+    'audioUrl',
+    'media_url',
+    'mediaUrl',
+    'file_url',
+    'fileUrl',
+    'source'
+] as const
+
 export function normalizeRemoteUrl(value: unknown): string {
     let source = decodeHtmlEntities(toText(value)).trim().replaceAll('\\/', '/')
     if (source.startsWith('//')) {
@@ -74,6 +90,13 @@ export function mediaKind(
     if (/\.(?:mp3|m4a|aac|wav|ogg|flac)$/iu.test(name)) {
         return 'audio'
     }
+    if (
+        record.photourl &&
+        !isNonImageRecord(record) &&
+        !firstValue(record, ATTACHMENT_SOURCE_KEYS)
+    ) {
+        return 'image'
+    }
     return 'file'
 }
 
@@ -125,4 +148,23 @@ export function imageSourceKey(source: string): string {
     } catch {
         return source
     }
+}
+
+export function isVideoPlayer(source: string): boolean {
+    const url = new URL(source)
+    return (
+        /\.swf$/iu.test(url.pathname) ||
+        /(?:^|\/)qzvideo(?:\/|$)/iu.test(url.pathname) ||
+        (url.hostname === 'v.qq.com' &&
+            /^\/(?:x|page|iframe)\//u.test(url.pathname))
+    )
+}
+
+export function videoPlayerId(source: string): string {
+    const url = new URL(source)
+    if (url.hostname === 'cache.tv.qq.com' && /\.swf$/iu.test(url.pathname))
+        return url.searchParams.get('v') ?? ''
+    if (url.hostname === 'user.qzone.qq.com')
+        return /\/qzvideo\/([^/]+)$/u.exec(url.pathname)?.[1] ?? ''
+    return ''
 }

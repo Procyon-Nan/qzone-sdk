@@ -45,7 +45,9 @@ export function toPublicPost(post: ProtocolPost): QzonePost {
         likeCount: post.likeCount,
         commentCount: post.commentCount,
         liked: post.liked,
-        media: Object.freeze([...post.media]),
+        media: Object.freeze(
+            post.media.filter((m) => m.kind !== 'video' || m.url)
+        ),
         comments: Object.freeze([...post.comments]),
         commentsComplete: post.commentsComplete
     })

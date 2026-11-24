@@ -114,7 +114,7 @@ export class WriteQueue {
     }
 }
 
-function writeCancelled(): QzoneCancelledError {
+export function writeCancelled(): QzoneCancelledError {
     return new QzoneCancelledError('写操作在开始前已取消', {
         context: { operation: 'write.queue' }
     })

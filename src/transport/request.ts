@@ -7,7 +7,7 @@ import type {
 } from './types.js'
 import { isAllowedHttpHost, isQqHttpUrl } from './url-policy.js'
 
-export const DEFAULT_USER_AGENT =
+const DEFAULT_USER_AGENT =
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
     'AppleWebKit/537.36 (KHTML, like Gecko) ' +
     'Chrome/122.0.0.0 Safari/537.36'
@@ -35,10 +35,13 @@ export function buildHeaders(
     endpoint: TransportEndpoint,
     options: TransportRequestOptions,
     session: SessionState,
-    userAgent: string
+    userAgent?: string
 ): Headers {
     const headers = new Headers(options.headers)
-    headers.set('user-agent', userAgent)
+    headers.set(
+        'user-agent',
+        userAgent ?? endpoint.userAgent ?? DEFAULT_USER_AGENT
+    )
     if (session.cookieHeader) {
         headers.set('cookie', session.cookieHeader)
     }
@@ -66,7 +69,7 @@ export function validateRequest(
     if (!endpoint.id.trim()) {
         throw new QzoneValidationError('Transport endpoint ID 不能为空')
     }
-    if (endpoint.method === 'GET' && options.form) {
+    if (endpoint.method === 'GET' && (options.form || options.body)) {
         throw new QzoneValidationError('GET endpoint 不能包含 form 请求体')
     }
 

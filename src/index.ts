@@ -36,6 +36,7 @@ export type {
     PostTarget,
     PublishImageInput,
     PublishPostOptions,
+    PublishVideoInput,
     QzoneAudioMedia,
     QzoneClientOptions,
     QzoneComment,

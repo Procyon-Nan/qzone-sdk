@@ -41,6 +41,7 @@ qzone-sdk/
 │   │   ├── publish.ts      # 图片上传并发、发布与结果验证编排
 │   │   ├── read.ts         # QQ 空间只读端点请求与响应校验
 │   │   ├── references.ts   # 写操作目标的缓存、详情与列表补全
+│   │   ├── video-upload.ts # MP4 校验和 H5 分片上传
 │   │   ├── verification.ts # 社交写操作的有限只读验证
 │   │   └── write.ts        # 发布、评论、点赞和删除协议请求
 │   ├── protocol/
@@ -91,6 +92,7 @@ qzone-sdk/
 │   ├── operations/
 │   │   ├── feed.spec.ts    # 三类 Feed、回退、分页与详情集成测试
 │   │   ├── mutation.spec.ts # 评论、点赞、删除和故障语义测试
+│   │   ├── mood-auth.spec.ts # 说说读取鉴权提示及凭据来源测试
 │   │   └── publish.spec.ts # 上传、发布、验证及不确定结果测试
 │   ├── protocol/
 │   │   ├── comment.spec.ts # 评论与嵌套回复解析测试

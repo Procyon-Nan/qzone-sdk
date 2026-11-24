@@ -25,9 +25,11 @@ export interface QzoneImageMedia extends QzoneMediaBase {
     readonly height?: number
 }
 
-/** 动态中的视频媒体。第一阶段只支持读取，不支持发布。 */
+/** 动态中的视频媒体。 */
 export interface QzoneVideoMedia extends QzoneMediaBase {
     readonly kind: 'video'
+    /** 空间返回的视频标识。 */
+    readonly id?: QzoneId
     readonly previewUrl?: string
     readonly durationMs?: number
 }
@@ -150,12 +152,16 @@ export interface PublishImageInput {
     readonly mimeType?: string
 }
 
-/** 文字、图片或图文动态发布参数。 */
+/** MP4 视频文件，无需提供封面或时长。 */
+export type PublishVideoInput = Pick<PublishImageInput, 'data' | 'name'>
+
+/** 正文及随同发布的独立照片和视频。 */
 export interface PublishPostOptions {
     /** 原样发送的动态正文。 */
     readonly content?: string
     /** 最多九张经过复制和真实格式校验的内存图片。 */
     readonly images?: readonly PublishImageInput[]
+    readonly videos?: readonly PublishVideoInput[]
     /** 取消信号；请求发出后的取消仍会执行有限只读验证。 */
     readonly signal?: AbortSignal
 }
@@ -269,12 +275,7 @@ export interface SessionInfo {
     readonly accountId: QzoneId | null
     /** 是否存在可识别账号且 g_tk 非零。 */
     readonly authenticated: boolean
-    /**
-     * 当前 g_tk 的派生来源。
-     *
-     * 说说类接口（`emotion_cgi_*`）只接受 `p_skey` 派生的 g_tk；来源为
-     * `skey`/`skey2` 时这些接口会被服务端以业务码 -3000 拒绝。
-     */
+    /** 当前 g_tk 按 SDK 优先级选中的凭据来源。 */
     readonly gtkSource: 'p_skey' | 'skey' | 'skey2' | 'g_tk' | 'none'
     /** 最近一次 Session 更新时间。 */
     readonly updatedAt: QzoneTimestamp | null

@@ -1,5 +1,7 @@
 import { QzoneValidationError } from '../errors.js'
+import { normalizeTextWhitespace } from '../protocol/html.js'
 import { preparePublishImage } from '../protocol/image.js'
+import { toPublicPost } from '../protocol/types.js'
 import type { SessionState } from '../session/session.js'
 import type {
     PostMutationResult,
@@ -12,21 +14,11 @@ import { UncertainTransportError } from '../transport/fetch-transport.js'
 import type { FeedOperations } from './feed.js'
 import type { PostOperations } from './post.js'
 import type { QzoneWriteApi } from './write.js'
+import { prepareVideo } from './video-upload.js'
 
 const MAX_PUBLISH_IMAGES = 9
 const MAX_UPLOAD_CONCURRENCY = 5
 const POST_MATCH_WINDOW_MS = 5 * 60 * 1_000
-
-export function snapshotPublishOptions(
-    options: PublishPostOptions
-): PublishPostOptions {
-    const normalized = normalizeOptions(options)
-    return Object.freeze({
-        content: normalized.content,
-        images: Object.freeze(normalized.images.map(snapshotPublishImage)),
-        ...(normalized.signal ? { signal: normalized.signal } : {})
-    })
-}
 
 export class PublishOperations {
     readonly #session: SessionState
@@ -47,30 +39,36 @@ export class PublishOperations {
     }
 
     async publishPost(
-        options: PublishPostOptions
+        options: NormalizedPublishOptions
     ): Promise<PostMutationResult> {
-        const normalized = normalizeOptions(options)
         const images = await Promise.all(
-            Array.from(normalized.images, (image) => preparePublishImage(image))
+            options.images.map(preparePublishImage)
         )
+        const videos = await Promise.all(options.videos.map(prepareVideo))
+        const videoIds: string[] = []
+        for (const video of videos) {
+            videoIds.push(await this.#write.uploadVideo(video, options.signal))
+        }
         const photos = await uploadAll(
             images,
-            (image) => this.#write.uploadImage(image, normalized.signal),
+            (image) => this.#write.uploadImage(image, options.signal),
             MAX_UPLOAD_CONCURRENCY
         )
         const sentAt = Date.now()
 
         try {
             const receipt = await this.#write.publishPost(
-                normalized.content,
+                options.content,
                 photos,
-                normalized.signal
+                videoIds,
+                options.signal
             )
             return await this.#resolveResult(
                 'accepted',
                 receipt.postId,
                 receipt.message,
-                normalized,
+                options,
+                videoIds,
                 sentAt
             )
         } catch (error) {
@@ -81,7 +79,8 @@ export class PublishOperations {
                 'unknown',
                 null,
                 undefined,
-                normalized,
+                options,
+                videoIds,
                 sentAt
             )
         }
@@ -92,6 +91,7 @@ export class PublishOperations {
         postId: string | null,
         message: string | undefined,
         options: NormalizedPublishOptions,
+        videoIds: readonly string[],
         sentAt: number
     ): Promise<PostMutationResult> {
         const accountId = this.#session.accountId
@@ -103,7 +103,13 @@ export class PublishOperations {
             return mutationResult(fallback, message, reference)
         }
 
-        const post = await this.#verify(reference, accountId, options, sentAt)
+        const post = await this.#verify(
+            reference,
+            accountId,
+            options,
+            videoIds,
+            sentAt
+        )
         return post
             ? mutationResult('verified', message, undefined, post)
             : mutationResult(fallback, message, reference)
@@ -113,36 +119,52 @@ export class PublishOperations {
         reference: PostReference | undefined,
         accountId: string,
         options: NormalizedPublishOptions,
+        videoIds: readonly string[],
         sentAt: number
     ): Promise<QzonePost | null> {
         try {
-            if (reference) {
-                return await this.#posts.getPost({ post: reference })
+            const expectedContent = normalizeTextWhitespace(options.content)
+            let target = reference
+            if (!target) {
+                const page = await this.#feeds.listFeeds({
+                    scope: 'self',
+                    limit: 20
+                })
+                const latestAllowed = Date.now() + POST_MATCH_WINDOW_MS
+                const earliestAllowed = sentAt - POST_MATCH_WINDOW_MS
+                const matches = page.items.filter((post) => {
+                    if (
+                        post.authorId !== accountId ||
+                        post.content !== expectedContent ||
+                        (!videoIds.length &&
+                            post.media.length !== options.images.length) ||
+                        !post.createdAt
+                    ) {
+                        return false
+                    }
+                    const createdAt = Date.parse(post.createdAt)
+                    return (
+                        Number.isFinite(createdAt) &&
+                        createdAt >= earliestAllowed &&
+                        createdAt <= latestAllowed
+                    )
+                })
+                if (matches.length !== 1) return null
+                const match = matches[0]!
+                if (!videoIds.length) return match
+                target = match
             }
-            const page = await this.#feeds.listFeeds({
-                scope: 'self',
-                limit: 20
-            })
-            const latestAllowed = Date.now() + POST_MATCH_WINDOW_MS
-            const earliestAllowed = sentAt - POST_MATCH_WINDOW_MS
-            const expectedContent = options.content.trim()
-            const matches = page.items.filter((post) => {
-                if (
-                    post.authorId !== accountId ||
-                    post.content !== expectedContent ||
-                    post.media.length !== options.images.length ||
-                    !post.createdAt
-                ) {
-                    return false
-                }
-                const createdAt = Date.parse(post.createdAt)
-                return (
-                    Number.isFinite(createdAt) &&
-                    createdAt >= earliestAllowed &&
-                    createdAt <= latestAllowed
-                )
-            })
-            return matches.length === 1 ? matches[0]! : null
+            if (!videoIds.length)
+                return await this.#posts.getPost({ post: target })
+            const post = await this.#posts.getPublishedDetail(target)
+            if (!post || post.content !== expectedContent) return null
+            const clips = post.media.filter((item) => item.kind === 'video')
+            return post.media.filter((item) => item.kind === 'image').length ===
+                options.images.length &&
+                clips.length === videoIds.length &&
+                clips.every((clip, i) => clip.id === videoIds[i])
+                ? toPublicPost(post)
+                : null
         } catch {
             // A verification failure must not make an already-sent write look retryable.
             return null
@@ -153,10 +175,11 @@ export class PublishOperations {
 interface NormalizedPublishOptions {
     readonly content: string
     readonly images: NonNullable<PublishPostOptions['images']>
+    readonly videos: NonNullable<PublishPostOptions['videos']>
     readonly signal?: AbortSignal
 }
 
-function normalizeOptions(
+export function snapshotPublishOptions(
     options: PublishPostOptions
 ): NormalizedPublishOptions {
     if (!options || typeof options !== 'object') {
@@ -169,33 +192,37 @@ function normalizeOptions(
         throw new QzoneValidationError('发布图片必须是数组')
     }
     const content = options.content ?? ''
+    if (options.videos !== undefined && !Array.isArray(options.videos))
+        throw new QzoneValidationError('发布视频必须是数组')
+    const videos = options.videos ?? []
     const images = options.images ?? []
     if (images.length > MAX_PUBLISH_IMAGES) {
         throw new QzoneValidationError(
             `QQ 空间一次最多只能发布 ${MAX_PUBLISH_IMAGES} 张图片`
         )
     }
-    if (!content.trim() && images.length === 0) {
-        throw new QzoneValidationError('动态正文和图片不能同时为空')
+    if (!content.trim() && !images.length && !videos.length) {
+        throw new QzoneValidationError('动态正文和媒体不能同时为空')
     }
     return {
         content,
-        images,
+        images: Array.from(images, snapshotMedia),
+        videos: Array.from(videos, snapshotMedia),
         ...(options.signal ? { signal: options.signal } : {})
     }
 }
 
-function snapshotPublishImage(input: PublishImageInput): PublishImageInput {
+function snapshotMedia(input: PublishImageInput): PublishImageInput {
     if (!input || typeof input !== 'object') {
         return input
     }
     return Object.freeze({
         ...input,
-        data: snapshotImageData(input.data)
+        data: snapshotMediaData(input.data)
     })
 }
 
-function snapshotImageData(
+function snapshotMediaData(
     data: PublishImageInput['data']
 ): PublishImageInput['data'] {
     if (data instanceof Uint8Array) {
@@ -203,9 +230,6 @@ function snapshotImageData(
     }
     if (data instanceof ArrayBuffer) {
         return data.slice(0)
-    }
-    if (data instanceof Blob) {
-        return data.slice()
     }
     return data
 }

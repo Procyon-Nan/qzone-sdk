@@ -85,9 +85,10 @@ describe('Fetch transport', () => {
             }
         ])
 
-        await createTransport(fake.fetch, { userAgent: 'Custom UA' }).request(
-            READ_ENDPOINT
-        )
+        await createTransport(fake.fetch, { userAgent: 'Custom UA' }).request({
+            ...READ_ENDPOINT,
+            userAgent: 'Endpoint UA'
+        })
     })
 
     it('merges Set-Cookie and notifies persistence', async () => {
