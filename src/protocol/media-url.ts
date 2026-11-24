@@ -1,6 +1,22 @@
 import { decodeHtmlEntities } from './html.js'
 import { firstValue, type ProtocolRecord, toBoolean, toText } from './value.js'
 
+export const ATTACHMENT_SOURCE_KEYS = [
+    'download_url',
+    'downloadUrl',
+    'play_url',
+    'playUrl',
+    'video_url',
+    'videoUrl',
+    'audio_url',
+    'audioUrl',
+    'media_url',
+    'mediaUrl',
+    'file_url',
+    'fileUrl',
+    'source'
+] as const
+
 export function normalizeRemoteUrl(value: unknown): string {
     let source = decodeHtmlEntities(toText(value)).trim().replaceAll('\\/', '/')
     if (source.startsWith('//')) {
@@ -73,6 +89,13 @@ export function mediaKind(
     }
     if (/\.(?:mp3|m4a|aac|wav|ogg|flac)$/iu.test(name)) {
         return 'audio'
+    }
+    if (
+        record.photourl &&
+        !isNonImageRecord(record) &&
+        !firstValue(record, ATTACHMENT_SOURCE_KEYS)
+    ) {
+        return 'image'
     }
     return 'file'
 }

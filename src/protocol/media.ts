@@ -1,6 +1,7 @@
 import type { QzoneMedia } from '../types.js'
 import { extractHtmlAttribute } from './html.js'
 import {
+    ATTACHMENT_SOURCE_KEYS,
     isNonImageRecord,
     mediaKind,
     mediaName,
@@ -11,6 +12,7 @@ import {
 import { extractPostId, resolvePostAuthor } from './post-fields.js'
 import {
     asRecord,
+    asRecords,
     firstValue,
     type ProtocolRecord,
     toInteger,
@@ -89,22 +91,7 @@ const IMAGE_SOURCE_KEYS = [
     'cover',
     'coverUrl'
 ] as const
-const MEDIA_SOURCE_KEYS = [
-    'download_url',
-    'downloadUrl',
-    'play_url',
-    'playUrl',
-    'video_url',
-    'videoUrl',
-    'audio_url',
-    'audioUrl',
-    'media_url',
-    'mediaUrl',
-    'file_url',
-    'fileUrl',
-    'source',
-    ...IMAGE_SOURCE_KEYS
-] as const
+const MEDIA_SOURCE_KEYS = [...ATTACHMENT_SOURCE_KEYS, ...IMAGE_SOURCE_KEYS]
 const MARKUP_KEYS = [
     'html',
     'htmlContent',
@@ -145,7 +132,7 @@ export function parseMedia(
             }
             return
         }
-        for (const record of nodeRecords(node)) {
+        for (const record of asRecords(node)) {
             if (!belongsTo(record, target)) {
                 continue
             }
@@ -175,7 +162,7 @@ export function parseMedia(
                 continue
             }
             const source = imageSource(record)
-            if (source && isPostImage(source)) {
+            if (source) {
                 const width = toInteger(
                     firstValue(record, ['origin_width', 'width'])
                 )
@@ -204,10 +191,8 @@ export function parseMedia(
             for (const key of MARKUP_KEYS) {
                 walkImages(record[key], depth - 1)
             }
-            for (const child of Object.values(record)) {
-                if (typeof child === 'object' && child !== null) {
-                    walkImages(child, depth - 1)
-                }
+            for (const child of mediaChildren(record)) {
+                walkImages(child, depth - 1)
             }
         }
     }
@@ -226,7 +211,7 @@ export function parseMedia(
         if (depth < 0) {
             return
         }
-        for (const record of nodeRecords(node)) {
+        for (const record of asRecords(node)) {
             if (!belongsTo(record, target)) {
                 continue
             }
@@ -255,10 +240,8 @@ export function parseMedia(
             for (const key of ATTACHMENT_CONTAINERS) {
                 walkAttachments(record[key], depth - 1)
             }
-            for (const child of Object.values(record)) {
-                if (typeof child === 'object' && child !== null) {
-                    walkAttachments(child, depth - 1)
-                }
+            for (const child of mediaChildren(record)) {
+                walkAttachments(child, depth - 1)
             }
         }
     }
@@ -268,15 +251,12 @@ export function parseMedia(
     return Object.freeze(collector.result)
 }
 
-function nodeRecords(value: unknown): readonly ProtocolRecord[] {
-    if (Array.isArray(value)) {
-        return value.flatMap((item) => {
-            const record = asRecord(item)
-            return record ? [record] : []
-        })
+function* mediaChildren(record: ProtocolRecord) {
+    for (const [key, child] of Object.entries(record)) {
+        if (key !== 'photourl' && typeof child === 'object' && child !== null) {
+            yield child
+        }
     }
-    const record = asRecord(value)
-    return record ? [record] : []
 }
 
 function createCollector(): MediaCollector {
@@ -298,11 +278,14 @@ function createCollector(): MediaCollector {
 }
 
 function imageSource(record: ProtocolRecord): string {
-    const photoUrls = asRecord(record.photourl)
+    const photoUrls: Readonly<Record<number, unknown>> | null = Array.isArray(
+        record.photourl
+    )
+        ? record.photourl
+        : asRecord(record.photourl)
     if (photoUrls) {
-        for (const key of ['1', '0', '14', '11', '2', '3']) {
-            const item = asRecord(photoUrls[key])
-            const source = normalizeRemoteUrl(item?.url ?? photoUrls[key])
+        for (const key of [1, 0, 14, 11, 2, 3]) {
+            const source = photoVariantUrl(photoUrls[key])
             if (source) {
                 return source
             }
@@ -310,11 +293,22 @@ function imageSource(record: ProtocolRecord): string {
     }
     for (const key of IMAGE_SOURCE_KEYS) {
         const source = normalizeRemoteUrl(record[key])
+        if (source && isPostImage(source)) {
+            return source
+        }
+    }
+    for (const variant of Object.values(photoUrls ?? {})) {
+        const source = photoVariantUrl(variant)
         if (source) {
             return source
         }
     }
     return ''
+}
+
+function photoVariantUrl(variant: unknown): string {
+    const url = normalizeRemoteUrl(asRecord(variant)?.url ?? variant)
+    return isPostImage(url) ? url : ''
 }
 
 function mediaSource(record: ProtocolRecord): string {

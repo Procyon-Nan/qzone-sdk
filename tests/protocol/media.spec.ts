@@ -128,6 +128,58 @@ describe('protocol media parsing', () => {
         ])
     })
 
+    it('returns one image per mobile photo in post order', () => {
+        const photos = ['b', 'a'].map((id) => ({
+            url3: `https://m.qpic.cn/${id}-fallback.jpg`,
+            photourl: {
+                0: { url: `https://m.qpic.cn/${id}-small.jpg` },
+                1: { url: `https://m.qpic.cn/${id}.jpg` },
+                11: { url: `https://m.qpic.cn/${id}-preview.jpg` }
+            }
+        }))
+        const expected = [
+            { kind: 'image', url: 'https://m.qpic.cn/b.jpg' },
+            { kind: 'image', url: 'https://m.qpic.cn/a.jpg' }
+        ]
+
+        expect(parseMedia({ pic: { picdata: photos } }, TARGET)).toEqual(
+            expected
+        )
+        expect(parseMedia({ media: [photos[0]] }, TARGET)).toEqual([
+            expected[0]
+        ])
+        const download_url = 'https://m.qpic.cn/document.pdf'
+        const attachment = { photourl: photos[0]?.photourl, download_url }
+        expect(parseMedia({ attachments: [attachment] }, TARGET)).toEqual([
+            { kind: 'file', name: 'document.pdf', url: download_url }
+        ])
+        const photourl = [{ url: 'https://m.qpic.cn/small.jpg' }, expected[0]]
+        expect(parseMedia({ pic: [{ photourl }] }, TARGET)).toEqual([
+            expected[0]
+        ])
+    })
+
+    it('uses an unknown photo variant only when the photo has no usable source', () => {
+        const photourl = {
+            42: { url: '' },
+            43: { url: 'https://m.qpic.cn/first.jpg' },
+            44: 'https://m.qpic.cn/second.jpg'
+        }
+        expect(parseMedia({ pic: [{ photourl }] }, TARGET)).toEqual([
+            { kind: 'image', url: photourl[43].url }
+        ])
+        expect(
+            parseMedia(
+                { pic: [{ photourl, url3: 'https://qlogo.cn/avatar' }] },
+                TARGET
+            )
+        ).toEqual([{ kind: 'image', url: photourl[43].url }])
+        const url3 = 'https://m.qpic.cn/original.jpg'
+        expect(parseMedia({ pic: [{ photourl, url3 }] }, TARGET)).toEqual([
+            { kind: 'image', url: url3 }
+        ])
+    })
+
     it('normalizes video, audio and file attachments', () => {
         const media = parseMedia(
             {
