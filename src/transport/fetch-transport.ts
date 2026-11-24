@@ -25,7 +25,6 @@ import {
 import {
     buildHeaders,
     buildUrl,
-    DEFAULT_USER_AGENT,
     encodeParameters,
     positiveInteger,
     validateRequest
@@ -57,7 +56,7 @@ export class FetchTransport {
     readonly #session: SessionState
     readonly #fetch: typeof globalThis.fetch
     readonly #logger?: QzoneLogger
-    readonly #userAgent: string
+    readonly #userAgent: string | undefined
     readonly #timeoutMs: number
     readonly #maxReadAttempts: number
     readonly #retryDelayMs: (retryCount: number) => number
@@ -66,7 +65,7 @@ export class FetchTransport {
         this.#session = options.session
         this.#fetch = options.fetch ?? globalThis.fetch
         this.#logger = options.logger
-        this.#userAgent = options.userAgent?.trim() || DEFAULT_USER_AGENT
+        this.#userAgent = options.userAgent?.trim() || undefined
         this.#timeoutMs = positiveInteger(
             options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
             '请求超时时间'

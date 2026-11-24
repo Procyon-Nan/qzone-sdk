@@ -14,6 +14,7 @@ export interface TransportEndpoint {
     readonly includeGtk?: boolean
     readonly tokenAccountId?: QzoneId
     readonly referer?: string
+    readonly userAgent?: string
     readonly origin?: string
     readonly redirect?: TransportRedirectPolicy
     readonly redirectFollowPath?: string

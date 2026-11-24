@@ -8,7 +8,7 @@ import {
     normalizeRemoteUrl,
     photoIdentity
 } from './media-url.js'
-import { extractAuthorId, extractPostId } from './post-fields.js'
+import { extractPostId, resolvePostAuthor } from './post-fields.js'
 import {
     asRecord,
     firstValue,
@@ -364,6 +364,6 @@ function belongsTo(record: ProtocolRecord, target: MediaTarget): boolean {
     if (postId && target.postId && postId !== target.postId) {
         return false
     }
-    const authorId = extractAuthorId(record)
+    const authorId = resolvePostAuthor(record).id
     return !(authorId && target.authorId && authorId !== target.authorId)
 }

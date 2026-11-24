@@ -56,6 +56,11 @@ describe('protocol media parsing', () => {
                         fid: 'post-2',
                         hostuin: '10002',
                         pic: [{ url3: 'https://m.qpic.cn/neighbor.jpg' }]
+                    },
+                    {
+                        fid: 'post-1',
+                        userinfo: { user: { uin: 10002 } },
+                        pic: [{ url3: 'https://m.qpic.cn/other-author.jpg' }]
                     }
                 ]
             },

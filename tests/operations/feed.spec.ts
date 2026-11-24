@@ -14,37 +14,55 @@ import { createFakeFetch } from '../support/fake-fetch.js'
 import { jsonResponse, textResponse } from '../support/fixtures.js'
 
 describe('Feed operations', () => {
-    it('reads the current-account index and continues through active feeds', async () => {
-        const fake = createFakeFetch([
-            (request) => {
-                expect(request.url).toContain('/mqzone/index')
-                return textResponse(
-                    indexHtml(feedPage([post('self-1', '10001')], 'cursor-a'))
-                )
-            },
-            (request) => {
-                expect(request.url).toContain('/getActiveFeeds')
-                expect(request.url).toContain('attach_info=cursor-a')
-                expect(request.url).toContain('qzonetoken=abc123')
-                return jsonResponse({
-                    feedpage: feedPage([post('self-2', '10001')])
-                })
+    it.each(['self', 'friends'] as const)(
+        'reads %s timeline pages with the mobile post author',
+        async (scope) => {
+            const author = { uin: 10002, nickname: '好友' }
+            const firstPost = {
+                id: { cellid: 'first' },
+                hostuin: '10001',
+                name: '空间主人',
+                logimg: 'https://qlogo.cn/space-owner.png',
+                userinfo: { user: author }
             }
-        ])
-        const client = createClient(fake.fetch)
-
-        const first = await client.listFeeds({ scope: 'self', limit: 1 })
-        const second = await client.listFeeds({
-            scope: 'self',
-            limit: 1,
-            cursor: requiredCursor(first.nextCursor)
-        })
-
-        expect(first.items.map((item) => item.id)).toEqual(['self-1'])
-        expect(second.items.map((item) => item.id)).toEqual(['self-2'])
-        expect(second.nextCursor).toBeNull()
-        expect(fake.calls).toHaveLength(2)
-    })
+            const secondPost = {
+                id: { cellid: 'second' },
+                userinfo: { user: author }
+            }
+            const fake = createFakeFetch([
+                textResponse(
+                    indexHtml(
+                        feedPage([{ fid: 'no-author' }, firstPost], 'next')
+                    )
+                ),
+                jsonResponse({ data: feedPage([secondPost]) })
+            ])
+            const client = createClient(fake.fetch)
+            const first = await client.listFeeds({ scope, limit: 1 })
+            const second = await client.listFeeds({
+                scope,
+                limit: 1,
+                cursor: requiredCursor(first.nextCursor)
+            })
+            expect(first.items.map((post) => post.id)).toEqual(['first'])
+            expect(second.items.map((post) => post.id)).toEqual(['second'])
+            for (const post of [...first.items, ...second.items]) {
+                expect(post.author).toEqual({ id: '10002', nickname: '好友' })
+            }
+            expect(second.nextCursor).toBeNull()
+            expect(fake.calls.map((r) => new URL(r.url).pathname)).toEqual([
+                '/mqzone/index',
+                '/webapp/json/mqzone_feeds/getActiveFeeds'
+            ])
+            const params = new URL(fake.calls[1]!.url).searchParams
+            expect(params.get('attach_info')).toBe('next')
+            expect(params.get('qzonetoken')).toBe('abc123')
+            for (const request of fake.calls)
+                expect(request.headers.get('user-agent')).toMatch(
+                    /Android.*Mobile/
+                )
+        }
+    )
 
     it('falls back from an index home redirect to legacy recent feeds', async () => {
         const events: QzoneLogEvent[] = []
@@ -55,6 +73,7 @@ describe('Feed operations', () => {
             }),
             (request) => {
                 expect(request.url).toContain('/feeds/feeds3_html_more')
+                expect(request.headers.get('user-agent')).toContain('Windows')
                 expect(request.url).toContain('pagenum=1')
                 expect(request.url).toContain('outputhtmlfeed=1')
                 return jsonResponse([
@@ -194,15 +213,21 @@ describe('Feed operations', () => {
         const fake = createFakeFetch([
             (request) => {
                 expect(request.url).toContain('/mqzone/profile')
+                expect(request.headers.get('user-agent')).toMatch(
+                    /Android.*Mobile/
+                )
                 expect(request.url).toContain('hostuin=10002')
                 return textResponse(
                     profileHtml(
-                        feedPage([post('profile-1', '10002')], 'profile-cursor')
+                        feedPage([{ fid: 'profile-1' }], 'profile-cursor')
                     )
                 )
             },
             (request) => {
                 expect(request.url).toContain('mobile.qzone.qq.com/get_feeds')
+                expect(request.headers.get('user-agent')).toMatch(
+                    /Android.*Mobile/
+                )
                 expect(request.url).toContain('hostuin=10002')
                 expect(request.url).toContain('res_attach=profile-cursor')
                 expect(request.url).toContain('qzonetoken=def456')
@@ -226,6 +251,7 @@ describe('Feed operations', () => {
         })
 
         expect(first.items[0]?.id).toBe('profile-1')
+        expect(first.items[0]?.authorId).toBe('10002')
         expect(second.items[0]?.id).toBe('profile-2')
         expect(second.nextCursor).toBeNull()
     })

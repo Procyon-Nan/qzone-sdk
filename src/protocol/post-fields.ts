@@ -39,13 +39,17 @@ export function extractPostId(raw: ProtocolRecord): string {
     return ''
 }
 
-export function extractAuthorId(raw: ProtocolRecord): string {
-    const user = firstRecord(raw, [
-        'userinfo',
-        'cell_userinfo',
-        'cellUserInfo',
-        'user'
-    ])
+export function resolvePostAuthor(raw: ProtocolRecord) {
+    const info = asRecord(raw.userinfo)
+    const mobile = asRecord(info?.user)
+    const mobileId = toId(mobile?.uin)
+    if (mobile && mobileId)
+        return { id: mobileId, fields: mobile, user: mobile }
+
+    const user =
+        info ??
+        firstRecord(raw, ['cell_userinfo', 'cellUserInfo', 'user']) ??
+        {}
     for (const value of [
         firstValue(raw, [
             'uin',
@@ -56,16 +60,14 @@ export function extractAuthorId(raw: ProtocolRecord): string {
             'hostuin',
             'hostUin'
         ]),
-        user?.uin,
+        user.uin,
         extractMarkupAttribute(raw, 'data-uin'),
         extractMarkupAttribute(raw, 'data-opuin')
     ]) {
         const id = toId(value)
-        if (id) {
-            return id
-        }
+        if (id) return { id, fields: raw, user }
     }
-    return ''
+    return { id: '', fields: raw, user }
 }
 
 export function extractContent(raw: ProtocolRecord): string {

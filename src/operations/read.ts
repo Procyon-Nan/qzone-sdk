@@ -54,7 +54,7 @@ export class QzoneReadApi {
         )
         const page = parseIndexPageHtml(response.text)
         await this.#session.setToken(accountId, page.token)
-        return parseFeedPage(page.feed, accountId)
+        return parseFeedPage(page.feed)
     }
 
     async profile(

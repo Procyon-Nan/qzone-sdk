@@ -13,11 +13,11 @@ import {
     toText
 } from './value.js'
 import {
-    extractAuthorId,
     extractContent,
     extractMarkupAttribute,
     extractNickname,
     extractPostId,
+    resolvePostAuthor,
     normalizeUrl
 } from './post-fields.js'
 
@@ -44,17 +44,11 @@ export function parseProtocolPost(
     const raw = asRecord(value) ?? {}
     const common =
         firstRecord(raw, ['common', 'comm', 'cell_comm', 'cellComm']) ?? {}
-    const user =
-        firstRecord(raw, [
-            'userinfo',
-            'cell_userinfo',
-            'cellUserInfo',
-            'user'
-        ]) ?? {}
+    const author = resolvePostAuthor(raw)
     const like = firstRecord(raw, ['like']) ?? {}
     const comment = firstRecord(raw, ['comment']) ?? {}
     const operation = firstRecord(raw, ['operation', 'cell_operation']) ?? {}
-    const authorId = extractAuthorId(raw) || defaultAuthorId
+    const authorId = author.id || defaultAuthorId
     const id = extractPostId(raw)
     const appId =
         toInteger(common.appid) ||
@@ -77,13 +71,17 @@ export function parseProtocolPost(
     const fallbackKey = computeLikeKey(appId, authorId, id)
     const businessParameters = asRecord(operation.busi_param) ?? {}
     const authorAvatarUrl = normalizeUrl(
-        firstValue(user, ['avatar', 'avatarUrl', 'figureurl', 'logimg']) ??
-            raw.logimg
+        firstValue(author.user, [
+            'avatar',
+            'avatarUrl',
+            'figureurl',
+            'logimg'
+        ]) ?? author.fields.logimg
     )
     return Object.freeze({
         id,
         authorId,
-        authorNickname: extractNickname(raw, user, authorId),
+        authorNickname: extractNickname(author.fields, author.user, authorId),
         ...(authorAvatarUrl ? { authorAvatarUrl } : {}),
         content: extractContent(raw),
         createdAt,
@@ -213,7 +211,7 @@ export function findPostDetail(
             return null
         }
         const postId = extractPostId(record)
-        const authorId = extractAuthorId(record)
+        const authorId = resolvePostAuthor(record).id
         if (
             postId === target.id &&
             (!authorId || authorId === target.authorId)
