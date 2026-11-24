@@ -27,7 +27,8 @@ C:\Users\31899\dev\astrbot_plugin_qzone_ultra
 qzone-sdk/
 ├── .github/
 │   └── workflows/
-│       └── ci.yml          # 持续集成：格式、静态检查、测试、构建与包验收
+│       ├── ci.yml          # 持续集成：格式、静态检查、测试、构建与包验收
+│       └── release.yml     # 版本标签触发检查、npm 可信发布与 GitHub Release
 ├── src/
 │   ├── internal/
 │   │   ├── cursor.ts       # 实例与请求上下文绑定的不透明游标存储
@@ -81,6 +82,7 @@ qzone-sdk/
 │   ├── index.ts            # SDK 公共导出入口
 │   └── types.ts            # SDK 公共模型、操作参数与结果类型
 ├── scripts/
+│   ├── release-notes.mjs   # 校验版本标签并提取当前版本发布说明
 │   └── smoke-package.mjs   # 发布包内容及 ESM/CommonJS 导入验收
 ├── tests/
 │   ├── e2e/

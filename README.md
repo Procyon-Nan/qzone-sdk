@@ -367,6 +367,32 @@ yarn smoke:package
 构建输出位于 `dist`。包冒烟测试会核对发布文件清单、构建产物中的本机路径，
 并分别从 ESM 与 CommonJS 消费端验证公共运行时 API 和类型声明。
 
+## 自动发布
+
+在 npm 的 `qzone-sdk` 包设置中添加 Trusted Publisher，选择 GitHub Actions：
+
+- Organization or user：`Procyon-Nan`
+- Repository：`qzone-sdk`
+- Workflow filename：`release.yml`
+- Environment name：留空
+- Allowed actions：允许直接 `npm publish`
+
+工作流通过 OIDC 获取发布凭据，无需配置 `NPM_TOKEN` Secret。
+配置方式参见 [npm 可信发布文档](https://docs.npmjs.com/trusted-publishers/)。
+
+提交并推送版本更新后，在该提交上创建与 `package.json` 版本一致的标签并推送：
+
+```bash
+git tag v0.4.2
+git push origin v0.4.2
+```
+
+版本标签触发 Release 工作流，复用完整 CI 检查。检查通过后，校验标签与包版本、
+提取 CHANGELOG 对应版本的说明，再发布 npm 包并创建 GitHub Release。
+`npm publish` 会执行已有的 `prepublishOnly`，完成类型检查、构建和打包预检。
+正式版本使用 npm 的 `latest` 标签；预发布版本使用 `next`，并标记 GitHub
+Release 为 Pre-release。版本不一致、变更记录缺失或检查失败时，工作流停止。
+
 ## 真实 E2E
 
 真实 E2E 默认跳过，必须显式启用读写并提供专用测试账号 Session。测试会按
