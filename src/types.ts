@@ -75,15 +75,25 @@ export interface PostReference {
     readonly authorId: QzoneId
 }
 
+/** 外链分享卡片；目标链接是网页地址，封面独立于动态上传的媒体。 */
+export interface QzoneShareCard {
+    readonly title: string
+    readonly summary: string
+    readonly url?: string
+    readonly previewUrl?: string
+}
+
 /** 已归一化的 QQ 空间动态。 */
 export interface QzonePost extends PostReference {
     readonly author: QzoneUser
+    /** 发布者配文；被分享内容位于 share。 */
     readonly content: string
     readonly createdAt: QzoneTimestamp | null
     readonly likeCount: number
     readonly commentCount: number
     readonly liked: boolean
     readonly media: readonly QzoneMedia[]
+    readonly share?: QzoneShareCard
     readonly comments: readonly QzoneComment[]
     /** 当前评论快照是否包含协议报告的全部一级评论和嵌套回复。 */
     readonly commentsComplete: boolean

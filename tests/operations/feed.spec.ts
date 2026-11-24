@@ -11,9 +11,80 @@ import {
 } from '../../src/index.js'
 import type { QzoneLogEvent, QzoneLogger } from '../../src/index.js'
 import { createFakeFetch } from '../support/fake-fetch.js'
-import { jsonResponse, textResponse } from '../support/fixtures.js'
+import {
+    jsonResponse,
+    textResponse,
+    shareCard,
+    shareListPost,
+    shareDetailPost
+} from '../support/fixtures.js'
 
 describe('Feed operations', () => {
+    it.each(['friends', 'profile'] as const)(
+        'reads share cards through %s pagination and detail without extra requests',
+        async (scope) => {
+            const options =
+                scope === 'profile' ? { scope, userId: '10002' } : { scope }
+            const fake = createFakeFetch([
+                textResponse(
+                    (scope === 'profile' ? profileHtml : indexHtml)(
+                        feedPage([shareListPost()], 'next')
+                    )
+                ),
+                jsonResponse({
+                    data: feedPage([shareListPost(), shareListPost('share-2')])
+                }),
+                ...(scope === 'friends'
+                    ? [textResponse(profileHtml(feedPage([])))]
+                    : []),
+                jsonResponse({ data: shareDetailPost() })
+            ])
+            const client = createClient(fake.fetch)
+            const first = await client.listFeeds({ ...options, limit: 1 })
+            const second = await client.listFeeds({
+                ...options,
+                limit: 1,
+                cursor: requiredCursor(first.nextCursor)
+            })
+            expect(first.items[0]?.share).toEqual(shareCard)
+            expect(second.items).toMatchObject([
+                { id: 'share-2', share: shareCard }
+            ])
+            expect(second.nextCursor).toBeNull()
+            const detail = await client.getPost({ post: first.items[0]! })
+            expect(detail.share).toEqual(shareCard)
+            expect(detail.content).toBe('')
+            expect(detail.media).toEqual([])
+            expect(fake.calls).toHaveLength(scope === 'friends' ? 4 : 3)
+            expect(fake.calls.at(-1)?.url).toContain('/mqzone_detail/shuoshuo')
+            expect(
+                new URL(fake.calls.at(-1)!.url).searchParams.get('appid')
+            ).toBe('202')
+            await client.close()
+
+            const uncached = createFakeFetch([
+                textResponse(profileHtml(feedPage([]))),
+                jsonResponse({
+                    data: {
+                        cell_comm: { appid: 202 },
+                        cell_id: { cellid: detail.id }
+                    }
+                })
+            ])
+            const other = createClient(uncached.fetch)
+            const readback = await other.getPost({
+                post: JSON.parse(JSON.stringify(detail))
+            })
+            expect(readback.share).toEqual(shareCard)
+            expect(uncached.calls).toHaveLength(2)
+            expect(uncached.calls[1]?.url).toContain('/mqzone_detail/shuoshuo')
+            expect(
+                new URL(uncached.calls[1]!.url).searchParams.get('appid')
+            ).toBe('202')
+            await other.close()
+        }
+    )
+
     it.each(['self', 'friends'] as const)(
         'reads %s timeline pages with the mobile post author',
         async (scope) => {

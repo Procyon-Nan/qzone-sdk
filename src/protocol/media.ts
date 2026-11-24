@@ -356,7 +356,7 @@ function createCollector(): MediaCollector {
     }
 }
 
-function imageSource(record: ProtocolRecord): string {
+export function imageSource(record: ProtocolRecord): string {
     const photoUrls = variantTable(record.photourl)
     if (photoUrls) {
         for (const key of [1, 0, 14, 11, 2, 3]) {

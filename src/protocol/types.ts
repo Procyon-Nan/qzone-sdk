@@ -1,4 +1,10 @@
-import type { QzoneComment, QzoneId, QzoneMedia, QzonePost } from '../types.js'
+import type {
+    QzoneComment,
+    QzoneId,
+    QzoneMedia,
+    QzonePost,
+    QzoneShareCard
+} from '../types.js'
 
 export interface ProtocolPostAction {
     readonly appId: number
@@ -19,6 +25,7 @@ export interface ProtocolPost {
     readonly commentCount: number
     readonly liked: boolean
     readonly media: readonly QzoneMedia[]
+    readonly share?: Partial<QzoneShareCard>
     readonly comments: readonly QzoneComment[]
     readonly commentsComplete: boolean
     readonly commentSnapshotPresent: boolean
@@ -41,6 +48,15 @@ export function toPublicPost(post: ProtocolPost): QzonePost {
             ...(post.authorAvatarUrl ? { avatarUrl: post.authorAvatarUrl } : {})
         }),
         content: post.content,
+        ...(post.share && Object.values(post.share).some(Boolean)
+            ? {
+                  share: Object.freeze({
+                      title: '',
+                      summary: '',
+                      ...post.share
+                  })
+              }
+            : {}),
         createdAt: post.createdAt,
         likeCount: post.likeCount,
         commentCount: post.commentCount,

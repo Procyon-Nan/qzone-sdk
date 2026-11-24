@@ -57,6 +57,7 @@ qzone-sdk/
 │   │   ├── payload.ts      # QQ 响应状态和 data 容器辅助
 │   │   ├── post-fields.ts  # 动态标识、作者和正文字段提取
 │   │   ├── post.ts         # 内部动态解析与详情合并
+│   │   ├── share.ts        # 移动端外链分享卡片解析
 │   │   ├── publish.ts      # 图片上传与动态发布响应解析
 │   │   ├── time.ts         # QQ 时间字段与 ISO 时间归一化
 │   │   ├── token.ts        # qzonetoken 安全提取

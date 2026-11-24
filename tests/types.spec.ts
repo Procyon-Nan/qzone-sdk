@@ -9,12 +9,27 @@ import type {
     QzoneCommentKind,
     QzoneMedia,
     QzonePost,
+    QzoneShareCard,
     QzoneSession,
     QzoneTimestamp,
     QzoneUser
 } from '../src/index.js'
 
 describe('public type contracts', () => {
+    it('exposes an optional share card without extending media kinds', () => {
+        expectTypeOf<QzonePost['share']>().toEqualTypeOf<
+            QzoneShareCard | undefined
+        >()
+        expectTypeOf<QzoneShareCard['title']>().toEqualTypeOf<string>()
+        expectTypeOf<QzoneShareCard['summary']>().toEqualTypeOf<string>()
+        expectTypeOf<QzoneShareCard['url']>().toEqualTypeOf<
+            string | undefined
+        >()
+        expectTypeOf<QzoneShareCard['previewUrl']>().toEqualTypeOf<
+            string | undefined
+        >()
+    })
+
     it('uses discriminated feed scopes', () => {
         const profile: ListFeedsOptions = {
             scope: 'profile',

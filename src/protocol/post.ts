@@ -3,6 +3,7 @@ import { parseCommentSnapshot } from './comment.js'
 import { extractCreatedAt } from './time.js'
 import type { ProtocolPost } from './types.js'
 import { parseMedia } from './media.js'
+import { parseShareCard } from './share.js'
 import {
     asRecord,
     firstRecord,
@@ -56,6 +57,7 @@ export function parseProtocolPost(
         toInteger(extractMarkupAttribute(raw, 'data-appid')) ||
         311
     const createdAt = extractCreatedAt(raw)
+    const share = appId === 202 ? parseShareCard(raw) : undefined
     const commentSnapshot = parseCommentSnapshot(raw)
     const comments = commentSnapshot.items
     const commentCount = Math.max(
@@ -83,7 +85,8 @@ export function parseProtocolPost(
         authorId,
         authorNickname: extractNickname(author.fields, author.user, authorId),
         ...(authorAvatarUrl ? { authorAvatarUrl } : {}),
-        content: extractContent(raw),
+        content: extractContent(raw, appId),
+        ...(share ? { share } : {}),
         createdAt,
         likeCount: toInteger(
             structuredLikeCount ?? rawLikeCount ?? markupLikeCount
@@ -122,7 +125,11 @@ export function mergeProtocolPost(
     detail: unknown
 ): ProtocolPost {
     const raw = asRecord(detail) ?? {}
-    const detailPost = parseProtocolPost(raw, listPost.authorId, 'detail')
+    const detailPost = parseProtocolPost(
+        { appid: listPost.action.appId, ...raw },
+        listPost.authorId,
+        'detail'
+    )
     const detailMedia = parseMedia(raw, {
         postId: listPost.id,
         authorId: listPost.authorId
@@ -163,6 +170,14 @@ export function mergeProtocolPost(
               }
             : {}),
         content: detailPost.content || listPost.content,
+        ...(listPost.share || detailPost.share
+            ? {
+                  share: Object.freeze({
+                      ...listPost.share,
+                      ...detailPost.share
+                  })
+              }
+            : {}),
         createdAt: detailPost.createdAt ?? listPost.createdAt,
         likeCount: hasLikeCount(raw)
             ? detailPost.likeCount

@@ -70,8 +70,8 @@ export function resolvePostAuthor(raw: ProtocolRecord) {
     return { id: '', fields: raw, user }
 }
 
-export function extractContent(raw: ProtocolRecord): string {
-    const original = asRecord(raw.original)
+export function extractContent(raw: ProtocolRecord, appId: number): string {
+    const original = appId === 202 ? null : asRecord(raw.original)
     for (const value of [
         raw.content,
         raw.con,

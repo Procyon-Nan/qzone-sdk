@@ -208,7 +208,11 @@ function protocolPostFromTarget(
     post: PostTarget,
     target: { readonly id: QzoneId; readonly authorId: QzoneId }
 ): ProtocolPost {
-    const base = parseProtocolPost({ fid: target.id, hostuin: target.authorId })
+    const base = parseProtocolPost({
+        fid: target.id,
+        hostuin: target.authorId,
+        ...(isPublicPost(post) && post.share ? { appid: 202 } : {})
+    })
     if (!isPublicPost(post)) {
         return base
     }
@@ -227,6 +231,7 @@ function protocolPostFromTarget(
         commentCount: post.commentCount,
         liked: post.liked,
         media: Object.freeze([...post.media]),
+        ...(post.share ? { share: Object.freeze({ ...post.share }) } : {}),
         comments: Object.freeze([...post.comments]),
         commentsComplete: post.commentsComplete,
         commentSnapshotPresent: true
