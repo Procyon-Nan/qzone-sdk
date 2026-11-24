@@ -184,7 +184,7 @@ describe('publish operations', () => {
             textResponse(
                 indexHtml([
                     {
-                        ...post('matched', 'same'),
+                        ...post('matched', 'same text\n\nnext line'),
                         time: now
                     }
                 ])
@@ -192,7 +192,7 @@ describe('publish operations', () => {
         ])
 
         const result = await createClient(fake.fetch).publishPost({
-            content: '  same\n'
+            content: '  same  text\r\n\r\n\r\n next\tline\n'
         })
 
         expect(result).toMatchObject({
@@ -407,6 +407,53 @@ describe('video publishing', () => {
             url1: 'https://m.qpic.cn/' + vid + '.jpg'
         }
     })
+    it.each([
+        [
+            '空白格式',
+            '  正文🌙  图片\t视频\r\n\r\n\r\n 下一段\n',
+            '正文🌙 图片 视频<br><br>下一段',
+            'verified'
+        ],
+        ['文字变更', '正文  图片', '正文 视频', 'accepted'],
+        ['换行不同', '正文\n图片', '正文 图片', 'accepted'],
+        [
+            '保留字面标签和实体',
+            '<b>正文</b>  &amp;',
+            '&lt;b&gt;正文&lt;/b&gt; &amp;amp;',
+            'verified'
+        ],
+        ['标签丢失', '<b>正文</b>', '正文', 'accepted'],
+        ['实体丢失', '&amp;', '&amp;', 'accepted']
+    ])(
+        'compares parsed text without rewriting the publish body: %s',
+        async (_name, content, readback, outcome) => {
+            const fake = createFakeFetch([
+                ...upload('v1'),
+                async (request) => {
+                    expect(
+                        new URLSearchParams(await request.text()).get('con')
+                    ).toBe(content)
+                    return jsonResponse({ tid: 'formatted' })
+                },
+                jsonResponse({
+                    ...post('formatted', readback),
+                    pic: [videoRecord('v1')]
+                })
+            ])
+            const result = await createClient(fake.fetch).publishPost({
+                content,
+                videos: [clip()]
+            })
+            expect(result.outcome).toBe(outcome)
+            expect(fake.calls).toHaveLength(5)
+            expect(
+                fake.calls.filter((request) =>
+                    request.url.includes('emotion_cgi_publish')
+                )
+            ).toHaveLength(1)
+        }
+    )
+
     it.each([
         'complete',
         'missing-video',

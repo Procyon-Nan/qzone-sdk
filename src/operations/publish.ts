@@ -1,4 +1,5 @@
 import { QzoneValidationError } from '../errors.js'
+import { normalizeTextWhitespace } from '../protocol/html.js'
 import { preparePublishImage } from '../protocol/image.js'
 import { toPublicPost } from '../protocol/types.js'
 import type { SessionState } from '../session/session.js'
@@ -122,6 +123,7 @@ export class PublishOperations {
         sentAt: number
     ): Promise<QzonePost | null> {
         try {
+            const expectedContent = normalizeTextWhitespace(options.content)
             let target = reference
             if (!target) {
                 const page = await this.#feeds.listFeeds({
@@ -130,7 +132,6 @@ export class PublishOperations {
                 })
                 const latestAllowed = Date.now() + POST_MATCH_WINDOW_MS
                 const earliestAllowed = sentAt - POST_MATCH_WINDOW_MS
-                const expectedContent = options.content.trim()
                 const matches = page.items.filter((post) => {
                     if (
                         post.authorId !== accountId ||
@@ -156,8 +157,7 @@ export class PublishOperations {
             if (!videoIds.length)
                 return await this.#posts.getPost({ post: target })
             const post = await this.#posts.getPublishedDetail(target)
-            if (!post || post.content.trim() !== options.content.trim())
-                return null
+            if (!post || post.content !== expectedContent) return null
             const clips = post.media.filter((item) => item.kind === 'video')
             return post.media.filter((item) => item.kind === 'image').length ===
                 options.images.length &&
