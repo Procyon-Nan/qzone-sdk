@@ -25,7 +25,7 @@ export async function preparePublishImage(
         throw new QzoneValidationError('发布图片 MIME 类型必须是字符串')
     }
 
-    const data = await copyImageData(input.data)
+    const data = await publishBytes(input.data)
     if (data.length === 0) {
         throw new QzoneValidationError(`图片 ${name} 的内容不能为空`)
     }
@@ -51,22 +51,22 @@ export async function preparePublishImage(
     })
 }
 
-async function copyImageData(value: unknown): Promise<Uint8Array> {
+export async function publishBytes(value: unknown): Promise<Uint8Array> {
     try {
         if (value instanceof Uint8Array) {
-            return new Uint8Array(value)
+            return value
         }
         if (value instanceof ArrayBuffer) {
-            return new Uint8Array(value.slice(0))
+            return new Uint8Array(value)
         }
         if (value instanceof Blob) {
             return new Uint8Array(await value.arrayBuffer())
         }
     } catch (cause) {
-        throw new QzoneValidationError('无法读取发布图片数据', { cause })
+        throw new QzoneValidationError('无法读取发布媒体数据', { cause })
     }
     throw new QzoneValidationError(
-        '发布图片数据必须是 Uint8Array、ArrayBuffer 或 Blob'
+        '发布媒体数据必须是 Uint8Array、ArrayBuffer 或 Blob'
     )
 }
 

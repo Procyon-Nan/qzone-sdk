@@ -7,6 +7,7 @@ import {
 } from '../errors.js'
 import {
     activeFeedsEndpoint,
+    videoIndexEndpoint,
     h5DetailEndpoint,
     indexEndpoint,
     legacyDetailEndpoint,
@@ -15,6 +16,7 @@ import {
     profileFeedsEndpoint,
     recentFeedsEndpoint
 } from '../protocol/endpoints.js'
+import { isVideoPlayer, normalizeRemoteUrl } from '../protocol/media-url.js'
 import { parseFeedPage } from '../protocol/feed.js'
 import { parseIndexPageHtml, parseProfilePageHtml } from '../protocol/page.js'
 import { assertPayloadSuccess } from '../protocol/payload.js'
@@ -23,6 +25,8 @@ import type { SessionState } from '../session/session.js'
 import type { QzoneId } from '../types.js'
 import type { FetchTransport } from '../transport/fetch-transport.js'
 import type { TransportRequestOptions } from '../transport/types.js'
+
+import { asRecord, asRecords, toText } from '../protocol/value.js'
 
 export interface LegacyPagePosition {
     readonly page: number
@@ -42,6 +46,48 @@ export class QzoneReadApi {
     constructor(session: SessionState, transport: FetchTransport) {
         this.#session = session
         this.#transport = transport
+    }
+
+    async videoUrls(
+        author: string,
+        ids: readonly string[],
+        signal?: AbortSignal
+    ) {
+        const found = new Map<string, string>()
+        const wanted = new Set(ids)
+        const endpoint = videoIndexEndpoint(author)
+        const count = 50
+        const seen = new Set<string>()
+        for (let start = 0; found.size < wanted.size; start += count) {
+            const payload = await this.#transport.requestData(endpoint, {
+                query: {
+                    uin: this.#session.accountId,
+                    hostUin: author,
+                    appid: 4,
+                    getMethod: 2,
+                    start,
+                    count,
+                    need_old: 1,
+                    getUserInfo: 1,
+                    inCharset: 'utf-8',
+                    outCharset: 'utf-8',
+                    format: 'json'
+                },
+                signal
+            })
+            assertPayloadSuccess(payload, endpoint.id)
+            const rows = asRecords(asRecord(asRecord(payload)?.data)?.Videos)
+            const before = seen.size
+            for (const row of rows) {
+                const id = toText(row.vid)
+                seen.add(id)
+                const url = normalizeRemoteUrl(row.url)
+                if (wanted.has(id) && url && !isVideoPlayer(url))
+                    found.set(id, url)
+            }
+            if (rows.length < count || seen.size === before) break
+        }
+        return found
     }
 
     async index(

@@ -55,6 +55,50 @@ export function parseUploadedPhoto(
     })
 }
 
+export function publishMediaForm(
+    account: string,
+    photos: readonly UploadedPhoto[],
+    videoIds: readonly string[]
+) {
+    const groups: { type: string; subtype: string; values: string[] }[] = []
+    if (photos.length)
+        groups.push({
+            type: '1',
+            subtype: '1',
+            values: photos.map((photo) => photo.richval)
+        })
+    if (videoIds.length)
+        groups.push({
+            type: '3',
+            subtype: '7',
+            values: videoIds.map((vid) => {
+                const play = encodeURIComponent(
+                    `http://cache.tv.qq.com/qqplayerout.swf?v=${vid}&auto=0`
+                )
+                const detail = encodeURIComponent(
+                    `http://user.qzone.qq.com/${account}/qzvideo/${vid}`
+                )
+                return `playurl=${play}&detailurl=${detail}&who=5&rich_flag=4&vid=${vid}`
+            })
+        })
+    const bo = photos
+        .map((photo) => photo.picBo)
+        .filter(Boolean)
+        .join(',')
+    return {
+        richval: groups.map((group) => group.values.join('\t')).join('\n'),
+        ...(groups.length
+            ? {
+                  richtype: groups.map((group) => group.type).join('\n'),
+                  subrichtype: groups.map((group) => group.subtype).join('\n')
+              }
+            : {}),
+        ...(photos.length
+            ? { pic_bo: groups.map(() => bo).join('\t'), pic_template: '' }
+            : {})
+    }
+}
+
 export function parsePublishReceipt(value: unknown): PublishReceipt {
     assertPayloadSuccess(value, 'post.publish')
     const records = payloadRecords(value)

@@ -269,8 +269,10 @@ export class FetchTransport {
             this.#session,
             this.#userAgent
         )
-        const body = options.form ? encodeParameters(options.form) : undefined
-        if (body && !headers.has('content-type')) {
+        const body = options.form
+            ? encodeParameters(options.form)
+            : options.body
+        if (options.form && !headers.has('content-type')) {
             headers.set(
                 'content-type',
                 'application/x-www-form-urlencoded;charset=UTF-8'

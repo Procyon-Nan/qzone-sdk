@@ -219,6 +219,33 @@ describe('protocol media parsing', () => {
         ])
     })
 
+    it('retains the direct rendition when the same video first appears as a player', () => {
+        const cover = 'https://example.test/first.jpg'
+        const url = 'https://example.test/first.mp4'
+        const media = parseMedia(
+            {
+                pic: [
+                    {
+                        video_info: {
+                            vid: 'v1',
+                            url1: cover,
+                            url3: 'https://cache.tv.qq.com/player.swf?v=v1'
+                        }
+                    }
+                ],
+                video: [
+                    { video_id: 'v2', url3: 'https://example.test/second.mp4' },
+                    { video_id: 'v1', url3: url }
+                ]
+            },
+            TARGET
+        )
+        expect(media).toMatchObject([
+            { kind: 'video', id: 'v1', url, previewUrl: cover },
+            { kind: 'video', id: 'v2' }
+        ])
+    })
+
     it('reads each detail video from url3 and its cover from url1', () => {
         const clip = {
             video_id: 'clip',
@@ -259,7 +286,7 @@ describe('protocol media parsing', () => {
         )
         expect(media).toEqual([
             { kind: 'file', url: file, name: 'notes.pdf' },
-            { kind: 'video', url: playlist }
+            { kind: 'video', id: 'clip', url: playlist }
         ])
     })
 
@@ -302,6 +329,7 @@ describe('protocol media parsing', () => {
                 name: 'clip.mp4',
                 mimeType: 'video/mp4',
                 previewUrl: 'https://photo.store.qq.com/cover.jpg',
+                id: 'clip',
                 durationMs: 14000
             },
             {

@@ -83,6 +83,30 @@ export function h5DetailEndpoint(
     )
 }
 
+export function videoUploadEndpoint(checksum?: string): TransportEndpoint {
+    const path = checksum ? 'FileBatchControl/' + checksum : 'FileUploadVideo'
+    const origin = 'https://h5.qzone.qq.com'
+    return {
+        id: checksum ? 'post.video.control' : 'post.video.slice',
+        method: 'POST',
+        operation: 'write',
+        authentication: 'required',
+        url: origin + '/webapp/json/sliceUpload/' + path,
+        origin,
+        referer: origin + '/',
+        redirect: 'none'
+    }
+}
+
+export function videoIndexEndpoint(author: QzoneId): TransportEndpoint {
+    return readEndpoint(
+        'video.list',
+        'https://user.qzone.qq.com/proxy/domain/taotao.qq.com/cgi-bin/video_get_data',
+        'https://user.qzone.qq.com/' + author,
+        { origin: 'https://user.qzone.qq.com' }
+    )
+}
+
 export function imageUploadEndpoint(accountId: QzoneId): TransportEndpoint {
     return writeEndpoint(
         'post.image.upload',

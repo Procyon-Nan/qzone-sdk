@@ -149,3 +149,13 @@ export function imageSourceKey(source: string): string {
         return source
     }
 }
+
+export function isVideoPlayer(source: string): boolean {
+    const url = new URL(source)
+    return (
+        /\.swf$/iu.test(url.pathname) ||
+        /(?:^|\/)qzvideo(?:\/|$)/iu.test(url.pathname) ||
+        (url.hostname === 'v.qq.com' &&
+            /^\/(?:x|page|iframe)\//u.test(url.pathname))
+    )
+}

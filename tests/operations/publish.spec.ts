@@ -365,6 +365,279 @@ describe('publish operations', () => {
     })
 })
 
+describe('video publishing', () => {
+    const clip = () => ({
+        name: 'clip.mp4',
+        data: new Uint8Array([
+            0, 0, 0, 16, 102, 116, 121, 112, 105, 115, 111, 109, 0, 0, 0, 0
+        ])
+    })
+    function upload(id: string) {
+        return [
+            jsonResponse({ data: { session: 'upload', slice_size: 8 } }),
+            async (req: Request) => {
+                const parts = await req.formData()
+                expect(req.url).toContain('offset=0')
+                expect(await (parts.get('data') as Blob).arrayBuffer()).toEqual(
+                    clip().data.slice(0, 8).buffer
+                )
+                return jsonResponse({ ret: 0 })
+            },
+            async (req: Request) => {
+                expect(req.url).toContain('offset=8')
+                return jsonResponse({ data: { biz: { sVid: id } } })
+            }
+        ]
+    }
+    const imageReply = (id: string) =>
+        jsonResponse({
+            data: {
+                albumid: 'album',
+                lloc: id,
+                sloc: id,
+                type: 3,
+                height: 16,
+                width: 16
+            }
+        })
+    const videoRecord = (vid: string) => ({
+        video_info: {
+            vid,
+            url3: 'https://cache.tv.qq.com/qqplayerout.swf?v=' + vid,
+            url1: 'https://m.qpic.cn/' + vid + '.jpg'
+        }
+    })
+    it.each([false, true])(
+        'verifies all independent photos and exact resolved videos (incomplete=%s)',
+        async (incomplete) => {
+            const pic = [
+                { url3: 'https://m.qpic.cn/photoA.jpg' },
+                { url3: 'https://m.qpic.cn/photoB.jpg' },
+                videoRecord('v1')
+            ]
+            const fake = createFakeFetch([
+                ...upload('v1'),
+                ...upload('v2'),
+                imageReply('a'),
+                imageReply('b'),
+                async (req) => {
+                    const form = new URLSearchParams(await req.text())
+                    expect(form.get('richtype')).toBe('1\n3')
+                    expect(form.get('subrichtype')).toBe('1\n7')
+                    const [photos, videos] = form.get('richval')!.split('\n')
+                    expect(
+                        photos!.split('\t').map((x) => x.split(',')[2])
+                    ).toEqual(['a', 'b'])
+                    expect(
+                        videos!
+                            .split('\t')
+                            .map((x) => new URLSearchParams(x).get('vid'))
+                    ).toEqual(['v1', 'v2'])
+                    return jsonResponse({ data: { tid: 'post' } })
+                },
+                jsonResponse({
+                    ...post('post', 'caption'),
+                    pic: incomplete ? pic : [...pic, videoRecord('v2')]
+                }),
+                jsonResponse({
+                    data: {
+                        Videos: [
+                            { vid: 'v2', url: 'https://example.test/2.mp4' },
+                            {
+                                vid: 'other',
+                                url: 'https://example.test/no.mp4'
+                            },
+                            { vid: 'v1', url: 'https://example.test/1.mp4' }
+                        ]
+                    }
+                })
+            ])
+            const first = clip()
+            const promise = createClient(fake.fetch).publishPost({
+                content: 'caption',
+                images: ['a', 'b'].map((name) => ({ name, data: png(16, 16) })),
+                videos: [first, clip()]
+            })
+            first.data.fill(0)
+            const result = await promise
+            expect(result.outcome).toBe(incomplete ? 'accepted' : 'verified')
+            expect(
+                fake.calls.filter((r) => r.url.includes('emotion_cgi_publish'))
+            ).toHaveLength(1)
+            expect(
+                fake.calls.filter((r) => r.url.includes('video_get_data'))
+            ).toHaveLength(1)
+            if (!incomplete)
+                expect(
+                    result.post?.media
+                        .filter((m) => m.kind === 'video')
+                        .map((m) => m.url)
+                ).toEqual([
+                    'https://example.test/1.mp4',
+                    'https://example.test/2.mp4'
+                ])
+        }
+    )
+
+    it('verifies only the detail response and preserves list data for later reads', async () => {
+        const video = [{ video_id: 'v1', url3: 'https://example.test/1.mp4' }]
+        const reference = { id: 'p', authorId: '10001' }
+        const detail = { fid: 'p', hostuin: '10001' }
+        const fake = createFakeFetch([
+            textResponse(indexHtml([{ ...post('p', 'caption'), video }])),
+            ...upload('v1'),
+            jsonResponse({ tid: 'p' }),
+            jsonResponse(detail),
+            jsonResponse(detail)
+        ])
+        const client = createClient(fake.fetch)
+        await client.listFeeds({ scope: 'friends', limit: 1 })
+        expect(
+            await client.publishPost({ content: 'caption', videos: [clip()] })
+        ).toMatchObject({ outcome: 'accepted', reference })
+        expect(await client.getPost({ post: reference })).toMatchObject({
+            content: 'caption',
+            media: [{ id: 'v1' }]
+        })
+    })
+
+    it('requires an author in the detail to verify an uploaded video', async () => {
+        const fake = createFakeFetch([
+            ...upload('v1'),
+            jsonResponse({ tid: 'p' }),
+            jsonResponse({
+                fid: 'p',
+                video: [{ video_id: 'v1', url3: 'https://example.test/1.mp4' }]
+            })
+        ])
+        expect(
+            await createClient(fake.fetch).publishPost({ videos: [clip()] })
+        ).toMatchObject({
+            outcome: 'accepted',
+            reference: { id: 'p', authorId: '10001' }
+        })
+    })
+
+    it('omits player URLs from lists and resolves a detail from shared index pages', async () => {
+        const row = {
+            ...post('p', 'caption'),
+            pic: [
+                {
+                    videoflag: 0,
+                    videodata: { videoid: '' },
+                    url3: 'https://m.qpic.cn/photo.png'
+                },
+                videoRecord('wanted')
+            ]
+        }
+        const fake = createFakeFetch([
+            textResponse(indexHtml([row])),
+            jsonResponse(row),
+            jsonResponse({
+                data: {
+                    Videos: Array.from({ length: 50 }, (_, i) => ({
+                        vid: String(i),
+                        url: 'https://example.test/wrong.mp4'
+                    }))
+                }
+            }),
+            async (req) => {
+                expect(new URL(req.url).searchParams.get('start')).toBe('50')
+                return jsonResponse({
+                    data: {
+                        Videos: [
+                            {
+                                vid: 'wanted',
+                                url: 'https://example.test/found.mp4'
+                            }
+                        ]
+                    }
+                })
+            }
+        ])
+        const client = createClient(fake.fetch)
+        const page = await client.listFeeds({ scope: 'friends', limit: 1 })
+        expect(page.items[0]?.media.map((m) => m.kind)).toEqual(['image'])
+        expect(fake.calls).toHaveLength(1)
+        const detail = await client.getPost({
+            post: { id: 'p', authorId: '10001' }
+        })
+        expect(detail.media.map((m) => m.url)).toEqual([
+            'https://m.qpic.cn/photo.png',
+            'https://example.test/found.mp4'
+        ])
+    })
+    it('validates the whole batch before any upload and stops on slice failure', async () => {
+        const invalid = createFakeFetch([])
+        await expect(
+            createClient(invalid.fetch).publishPost({
+                videos: [clip(), { name: 'bad.mp4', data: new Uint8Array(8) }]
+            })
+        ).rejects.toBeInstanceOf(QzoneValidationError)
+        expect(invalid.calls).toHaveLength(0)
+        const failed = createFakeFetch([
+            jsonResponse({ data: { session: 's', slice_size: 20 } }),
+            jsonResponse({ ret: -5 })
+        ])
+        await expect(
+            createClient(failed.fetch).publishPost({ videos: [clip()] })
+        ).rejects.toBeInstanceOf(QzoneRequestError)
+        expect(failed.calls).toHaveLength(2)
+    })
+    it('cancels between slices without submitting the post', async () => {
+        const abort = new AbortController()
+        const fake = createFakeFetch([
+            jsonResponse({ data: { session: 's', slice_size: 8 } }),
+            async () => {
+                abort.abort()
+                return jsonResponse({ ret: 0 })
+            }
+        ])
+        await expect(
+            createClient(fake.fetch).publishPost({
+                videos: [clip()],
+                signal: abort.signal
+            })
+        ).rejects.toThrow()
+        expect(fake.calls).toHaveLength(2)
+    })
+    it('publishes a video alone, keeps direct links and does not repeat an uncertain submit', async () => {
+        const ok = createFakeFetch([
+            ...upload('v1'),
+            async (r) => {
+                expect(
+                    new URLSearchParams(await r.text()).get('richtype')
+                ).toBe('3')
+                return jsonResponse({ tid: 'p' })
+            },
+            jsonResponse({
+                ...post('p', ''),
+                video: [{ video_id: 'v1', url3: 'https://example.test/1.mp4' }]
+            })
+        ])
+        expect(
+            (await createClient(ok.fetch).publishPost({ videos: [clip()] }))
+                .outcome
+        ).toBe('verified')
+        expect(ok.calls).toHaveLength(5)
+        const uncertain = createFakeFetch([
+            ...upload('v1'),
+            textResponse('lost', { status: 502 }),
+            textResponse(indexHtml([]))
+        ])
+        expect(
+            (
+                await createClient(uncertain.fetch).publishPost({
+                    videos: [clip()]
+                })
+            ).outcome
+        ).toBe('unknown')
+        expect(
+            uncertain.calls.filter((r) => r.url.includes('emotion_cgi_publish'))
+        ).toHaveLength(1)
+    })
+})
+
 function createClient(fetch: typeof globalThis.fetch): QzoneClient {
     return new QzoneClient({
         session: {

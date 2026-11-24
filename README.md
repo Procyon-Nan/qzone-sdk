@@ -17,7 +17,7 @@
 
 - 管理 QQ 登录态、Cookie 和 Token；
 - 读取动态列表和动态详情；
-- 发布文字及图片动态；
+- 发布正文、图片及 MP4 视频动态；
 - 发表评论；
 - 回复评论；
 - 点赞和取消点赞；
@@ -29,7 +29,7 @@
 调用方通过 `onSessionChange` 回调负责。
 
 登录获取、浏览器运行时、持久化实现、框架适配器、WebUI、命令、LLM 与
-自动化业务不属于 SDK 职责；视频发布、访客系统和相册管理也不属于第一阶段
+自动化业务不属于 SDK 职责；访客系统和相册管理也不属于第一阶段
 范围。
 
 ## 安装
@@ -123,9 +123,9 @@ const detail = post ? await client.getPost({ post }) : null
 
 ## 发布动态
 
-`publishPost()` 支持纯文字、纯图片或图文动态。图片输入只接受内存中的
-`Uint8Array`、`ArrayBuffer` 或 `Blob`，SDK 会复制输入并校验真实文件签名
-和尺寸；支持 JPEG、PNG、GIF、BMP 和 WebP，单次最多九张：
+`publishPost()` 接受正文、独立图片和 MP4 视频。媒体输入接受内存中的
+`Uint8Array`、`ArrayBuffer` 或 `Blob`，SDK 在入队前复制可变字节。图片按文件签名和尺寸校验，
+支持 JPEG、PNG、GIF、BMP 和 WebP，单次最多九张：
 
 ```ts
 import { readFile } from 'node:fs/promises'
@@ -142,6 +142,20 @@ const result = await client.publishPost({
     ]
 })
 ```
+
+视频使用可选的 `videos` 数组，每项提供文件名和原始字节；不需要上传封面或传入时长：
+
+```ts
+const result = await client.publishPost({
+    content: '今天的风景',
+    images: [{ name: 'park.jpg', data: await readFile('park.jpg') }],
+    videos: [{ name: 'walk.mp4', data: await readFile('walk.mp4') }]
+})
+```
+
+每次调用最多提交一条说说。含视频时，只有读回的正文、独立图片数量和全部视频标识与请求一致，并取得视频媒体地址，才返回 `verified`。对于带播放器的详情，`getPost()` 按作者和视频 ID 匹配媒体直链；列表读取不为此额外请求。
+
+真实账号测试中，两张照片和两段视频的发布请求已受理，但详情只形成一个视频条目，SDK 返回 `accepted`。需要多段视频完整送达时，请以核验结果为准。该次详情返回的是默认占位图，未验证到自动生成的首帧封面。
 
 正文会原样发送，不会由 SDK 清洗或截断。图片最短边须至少为 16 像素，
 多图上传的并发数最多为五。最终发布请求不会自动重试。

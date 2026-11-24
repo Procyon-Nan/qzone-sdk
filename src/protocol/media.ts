@@ -3,6 +3,7 @@ import { extractHtmlAttribute } from './html.js'
 import {
     ATTACHMENT_SOURCE_KEYS,
     isNonImageRecord,
+    isVideoPlayer,
     mediaKind,
     mediaName,
     imageSourceKey,
@@ -130,21 +131,24 @@ export function parseMedia(
 
     // A video owns both its covers and its playback variants. Neither walker descends into it.
     function collectVideo(record: ProtocolRecord): boolean {
-        const info = asRecord(record.video_info ?? record.videoInfo)
+        const info =
+            asRecord(record.video_info ?? record.videoInfo) ??
+            (toInteger(record.videoflag) ? asRecord(record.videodata) : null)
         let url: string
         let previewUrl: string
         if (info) {
-            url = mediaSource(info, VIDEO_SOURCE_KEYS)
+            url = playbackSource(info, VIDEO_SOURCE_KEYS)
             if (!url) {
                 const alternate = mediaSource(info)
                 if (alternate && mediaKind({}, alternate) === 'video')
                     url = alternate
             }
-            previewUrl = imageSource(record)
+            previewUrl =
+                photoVariantUrl(info.url1) ||
+                variantUrl(info.coverurl) ||
+                imageSource(record)
         } else if ('videourl' in record || 'videourls' in record) {
-            url =
-                normalizeRemoteUrl(record.videourl) ||
-                variantUrl(record.videourls)
+            url = playbackSource(record)
             previewUrl = variantUrl(record.coverurl)
         } else if (
             'video_id' in record &&
@@ -156,24 +160,39 @@ export function parseMedia(
         } else {
             return false
         }
-        if (!url) return true
         const metadata = info ?? record
         const durationMs = toInteger(
             firstValue(metadata, ['video_time', 'duration'])
         )
         const id = toText(
-            firstValue(metadata, ['video_id', 'videoId', 'videoid'])
+            firstValue(metadata, [
+                'vid',
+                'sVid',
+                'video_id',
+                'videoId',
+                'videoid'
+            ])
         )
-        const mp4 = /\.mp4$/iu.test(new URL(url).pathname)
-            ? { name: `${id || 'qzone-video'}.mp4`, mimeType: 'video/mp4' }
-            : {}
-        collector.add({
-            kind: 'video',
-            url,
-            ...mp4,
-            ...(previewUrl ? { previewUrl } : {}),
-            ...(durationMs > 0 ? { durationMs } : {})
-        })
+        if (!url) return true
+        if (isVideoPlayer(url)) {
+            if (!id) return true
+            url = ''
+        }
+        const mp4 =
+            url && /\.mp4$/iu.test(new URL(url).pathname)
+                ? { name: `${id || 'qzone-video'}.mp4`, mimeType: 'video/mp4' }
+                : {}
+        collector.add(
+            {
+                kind: 'video',
+                ...(id ? { id } : {}),
+                url,
+                ...mp4,
+                ...(previewUrl ? { previewUrl } : {}),
+                ...(durationMs > 0 ? { durationMs } : {})
+            },
+            id || undefined
+        )
         return true
     }
 
@@ -245,7 +264,12 @@ export function parseMedia(
             if (collectVideo(record)) continue
             const source = mediaSource(record)
             const kind = source ? mediaKind(record, source) : null
-            if (source && kind && kind !== 'image') {
+            if (
+                source &&
+                kind &&
+                kind !== 'image' &&
+                !(kind === 'video' && isVideoPlayer(source))
+            ) {
                 const name = mediaName(record, source)
                 const mimeType = toText(
                     firstValue(record, ['mime_type', 'content_type', 'mime'])
@@ -288,6 +312,7 @@ function* mediaChildren(
             !containers.has(key) &&
             key !== 'photourl' &&
             key !== 'coverurl' &&
+            key !== 'videodata' &&
             typeof child === 'object' &&
             child !== null
         ) {
@@ -298,15 +323,29 @@ function* mediaChildren(
 
 function createCollector(): MediaCollector {
     const result: QzoneMedia[] = []
-    const seen = new Set<string>()
+    const positions = new Map<string, number>()
     const seenSources = new Set<string>()
     return {
         result,
         add: (media, identity) => {
             const key = `${media.kind}:${identity ?? imageSourceKey(media.url)}`
-            const sourceKey = `${media.kind}:${imageSourceKey(media.url)}`
-            if (!seen.has(key) && !seenSources.has(sourceKey)) {
-                seen.add(key)
+            const sourceKey = media.url
+                ? `${media.kind}:${imageSourceKey(media.url)}`
+                : key
+            const index = positions.get(key)
+            if (index !== undefined) {
+                const previous = result[index]!
+                if (
+                    previous.kind === 'video' &&
+                    !previous.url &&
+                    media.kind === 'video' &&
+                    media.url
+                ) {
+                    result[index] = Object.freeze({ ...previous, ...media })
+                    seenSources.add(sourceKey)
+                }
+            } else if (!seenSources.has(sourceKey)) {
+                positions.set(key, result.length)
                 seenSources.add(sourceKey)
                 result.push(Object.freeze(media))
             }
@@ -356,6 +395,21 @@ function variantUrl(variants: unknown): string {
         if (url) return url
     }
     return ''
+}
+
+function playbackSource(
+    record: ProtocolRecord,
+    keys: readonly string[] = []
+): string {
+    const candidates = [
+        ...keys.map((key) => normalizeRemoteUrl(record[key])),
+        normalizeRemoteUrl(record.videourl),
+        ...Object.values(variantTable(record.videourls) ?? {}).map((v) =>
+            normalizeRemoteUrl(asRecord(v)?.url)
+        ),
+        normalizeRemoteUrl(record.actionurl)
+    ].filter(Boolean)
+    return candidates.find((url) => !isVideoPlayer(url)) ?? candidates[0] ?? ''
 }
 
 function mediaSource(

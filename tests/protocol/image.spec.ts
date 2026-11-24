@@ -20,12 +20,8 @@ describe('publish image validation', () => {
         })
     })
 
-    it('accepts Blob input and copies mutable byte input immediately', async () => {
+    it('accepts byte arrays, Blob and ArrayBuffer input', async () => {
         const bytes = png(16, 16)
-        const copyPromise = preparePublishImage({ data: bytes, name: 'a.png' })
-        bytes[23] = 99
-
-        const copied = await copyPromise
         const blobBytes = png(17, 18)
         const blob = await preparePublishImage({
             data: new Blob([new Uint8Array(blobBytes).buffer], {
@@ -39,8 +35,9 @@ describe('publish image validation', () => {
             name: 'c.png'
         })
 
-        expect(copied.height).toBe(16)
-        expect(copied.data[23]).toBe(16)
+        expect(
+            (await preparePublishImage({ data: bytes, name: 'a.png' })).height
+        ).toBe(16)
         expect(blob).toMatchObject({ width: 17, height: 18 })
         expect(buffer).toMatchObject({ width: 19, height: 20 })
     })

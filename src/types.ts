@@ -25,9 +25,11 @@ export interface QzoneImageMedia extends QzoneMediaBase {
     readonly height?: number
 }
 
-/** 动态中的视频媒体。第一阶段只支持读取，不支持发布。 */
+/** 动态中的视频媒体。 */
 export interface QzoneVideoMedia extends QzoneMediaBase {
     readonly kind: 'video'
+    /** 空间返回的视频标识。 */
+    readonly id?: QzoneId
     readonly previewUrl?: string
     readonly durationMs?: number
 }
@@ -150,12 +152,16 @@ export interface PublishImageInput {
     readonly mimeType?: string
 }
 
-/** 文字、图片或图文动态发布参数。 */
+/** MP4 视频文件，无需提供封面或时长。 */
+export type PublishVideoInput = Pick<PublishImageInput, 'data' | 'name'>
+
+/** 正文及随同发布的独立照片和视频。 */
 export interface PublishPostOptions {
     /** 原样发送的动态正文。 */
     readonly content?: string
     /** 最多九张经过复制和真实格式校验的内存图片。 */
     readonly images?: readonly PublishImageInput[]
+    readonly videos?: readonly PublishVideoInput[]
     /** 取消信号；请求发出后的取消仍会执行有限只读验证。 */
     readonly signal?: AbortSignal
 }

@@ -26,6 +26,7 @@ export interface TransportRequestOptions {
     readonly query?: Readonly<
         Record<string, TransportParameter | readonly TransportParameter[]>
     >
+    readonly body?: string | FormData
     readonly form?: Readonly<
         Record<string, TransportParameter | readonly TransportParameter[]>
     >

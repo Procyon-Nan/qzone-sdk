@@ -69,7 +69,7 @@ export function validateRequest(
     if (!endpoint.id.trim()) {
         throw new QzoneValidationError('Transport endpoint ID 不能为空')
     }
-    if (endpoint.method === 'GET' && options.form) {
+    if (endpoint.method === 'GET' && (options.form || options.body)) {
         throw new QzoneValidationError('GET endpoint 不能包含 form 请求体')
     }
 
