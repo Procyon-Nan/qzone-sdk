@@ -383,8 +383,9 @@ yarn smoke:package
 提交并推送版本更新后，在该提交上创建与 `package.json` 版本一致的标签并推送：
 
 ```bash
-git tag v0.4.2
-git push origin v0.4.2
+tag="v$(node -p "require('./package.json').version")"
+git tag "$tag"
+git push origin "$tag"
 ```
 
 版本标签触发 Release 工作流，复用完整 CI 检查。检查通过后，校验标签与包版本、
