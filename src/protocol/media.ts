@@ -52,6 +52,7 @@ const ATTACHMENT_CONTAINERS = [
     'music',
     'musics',
     'video',
+    'cell_video',
     'videos',
     'media',
     'medias'

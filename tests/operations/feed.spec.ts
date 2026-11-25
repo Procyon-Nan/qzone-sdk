@@ -20,6 +20,70 @@ import {
 } from '../support/fixtures.js'
 
 describe('Feed operations', () => {
+    it('reads the selected album video and its cover from H5 detail', async () => {
+        const id = { cellid: 'album' }
+        const userinfo = { user: { uin: 10002 } }
+        const video = (source: string) => ({
+            videoid: 'clip',
+            videourl: `https://video.qq.com/${source}.mp4`,
+            coverurl: { '0': { url: `https://qpic.cn/${source}.jpg` } }
+        })
+        const detailVideo = video('detail')
+        const listed = {
+            id,
+            userinfo,
+            comm: { appid: 4 },
+            video: video('list'),
+            operation: {
+                busi_param: {
+                    1: '素材标识',
+                    2: '',
+                    5: 'https://user.qzone.qq.com/photo?a=1&b=2',
+                    7: '0',
+                    '-100': 'type:11'
+                }
+            }
+        }
+        const fake = createFakeFetch([
+            textResponse(profileHtml(feedPage([listed]))),
+            jsonResponse({
+                data: {
+                    cell_id: id,
+                    cell_userinfo: userinfo,
+                    cell_comm: { appid: 4 },
+                    cell_video: detailVideo
+                }
+            })
+        ])
+        const client = createClient(fake.fetch)
+        const page = await client.listFeeds({
+            scope: 'profile',
+            userId: '10002',
+            limit: 1
+        })
+        const detail = await client.getPost({ post: page.items[0]! })
+        expect(fake.calls).toHaveLength(2)
+        const { pathname, searchParams } = new URL(fake.calls[1]!.url)
+        expect(pathname).toBe('/webapp/json/mqzone_detail/photo')
+        expect(searchParams.getAll('busi_param')).toEqual([
+            '1=素材标识&2=&5=https://user.qzone.qq.com/photo?a=1&b=2&7=0&-100=type:11'
+        ])
+        expect(detail).toMatchObject({
+            id: id.cellid,
+            authorId: '10002',
+            commentsComplete: false,
+            media: [
+                {
+                    kind: 'video',
+                    id: 'clip',
+                    url: detailVideo.videourl,
+                    previewUrl: detailVideo.coverurl['0'].url
+                }
+            ]
+        })
+        await client.close()
+    })
+
     it.each(['friends', 'profile'] as const)(
         'reads share cards through %s pagination and detail without extra requests',
         async (scope) => {

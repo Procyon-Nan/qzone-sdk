@@ -258,7 +258,7 @@ export class QzoneReadApi {
 
     async h5Detail(post: ProtocolPost, signal?: AbortSignal): Promise<unknown> {
         const payload = await this.#transport.requestData(
-            h5DetailEndpoint(post.authorId, post.id),
+            h5DetailEndpoint(post.authorId, post.id, post.action.appId),
             {
                 query: {
                     cellid: post.id,
@@ -329,5 +329,8 @@ function readTransportOptions(
 function serializeBusinessParameters(
     value: Readonly<Record<string, unknown>>
 ): string {
-    return Object.keys(value).length > 0 ? JSON.stringify(value) : ''
+    // 移动端先拼接原始键值对，再将整串作为一个查询参数编码。
+    return Object.entries(value)
+        .map(([key, item]) => `${key}=${String(item)}`)
+        .join('&')
 }

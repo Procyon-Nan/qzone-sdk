@@ -73,11 +73,12 @@ export function legacyDetailEndpoint(
 
 export function h5DetailEndpoint(
     authorId: QzoneId,
-    postId: QzoneId
+    postId: QzoneId,
+    appId: number
 ): TransportEndpoint {
     return readEndpoint(
         'post.detail.h5',
-        'https://h5.qzone.qq.com/webapp/json/mqzone_detail/shuoshuo',
+        `https://h5.qzone.qq.com/webapp/json/mqzone_detail/${appId === 4 ? 'photo' : 'shuoshuo'}`,
         `https://user.qzone.qq.com/${authorId}/mood/${postId}`,
         { tokenAccountId: authorId }
     )
