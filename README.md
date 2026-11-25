@@ -380,16 +380,11 @@ yarn smoke:package
 工作流通过 OIDC 获取发布凭据，无需配置 `NPM_TOKEN` Secret。
 配置方式参见 [npm 可信发布文档](https://docs.npmjs.com/trusted-publishers/)。
 
-提交并推送版本更新后，在该提交上创建与 `package.json` 版本一致的标签并推送：
-
-```bash
-tag="v$(node -p "require('./package.json').version")"
-git tag "$tag"
-git push origin "$tag"
-```
-
-版本标签触发 Release 工作流，复用完整 CI 检查。检查通过后，校验标签与包版本、
-提取 CHANGELOG 对应版本的说明，再发布 npm 包并创建 GitHub Release。
+更新 `package.json` 版本和 CHANGELOG 后，将提交推送到 `main` 即可。
+Release 工作流对尚无版本标签的包运行完整 CI，从 CHANGELOG 提取说明，发布 npm，
+并在本次推送的提交上创建 `v<版本号>` 标签和 GitHub Release。
+仅更新发布工作流时也会检查当前版本，已有版本标签的普通分支推送会跳过发布。
+仍可手动推送与包版本一致的 `v*` 标签触发同一流程。
 `npm publish` 会执行已有的 `prepublishOnly`，完成类型检查、构建和打包预检。
 正式版本使用 npm 的 `latest` 标签；预发布版本使用 `next`，并标记 GitHub
 Release 为 Pre-release。版本不一致、变更记录缺失或检查失败时，工作流停止。

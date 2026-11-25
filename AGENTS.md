@@ -28,7 +28,7 @@ qzone-sdk/
 ├── .github/
 │   └── workflows/
 │       ├── ci.yml          # 持续集成：格式、静态检查、测试、构建与包验收
-│       └── release.yml     # 版本标签触发检查、npm 可信发布与 GitHub Release
+│       └── release.yml     # 主分支版本更新或版本标签触发 npm 可信发布与 GitHub Release
 ├── src/
 │   ├── internal/
 │   │   ├── cursor.ts       # 实例与请求上下文绑定的不透明游标存储

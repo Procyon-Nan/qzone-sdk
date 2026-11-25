@@ -2,22 +2,47 @@ name: Release
 
 on:
     push:
+        branches: [main]
         tags: ['v*']
+        paths:
+            - package.json
+            - .github/workflows/release.yml
 
 permissions:
     contents: read
 
-concurrency:
-    group: release-${{ github.ref }}
-    cancel-in-progress: false
-
 jobs:
+    version:
+        runs-on: ubuntu-latest
+        outputs:
+            tag: ${{ steps.version.outputs.tag }}
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+            - id: version
+              run: |
+                  tag="v$(node -p "require('./package.json').version")"
+                  if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+                      [[ "$GITHUB_REF_NAME" == "$tag" ]]
+                  elif git show-ref --verify --quiet "refs/tags/$tag"; then
+                      exit 0
+                  fi
+                  echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
     verify:
+        needs: version
+        if: needs.version.outputs.tag != ''
         uses: ./.github/workflows/ci.yml
 
     release:
-        needs: verify
+        needs: [version, verify]
         runs-on: ubuntu-latest
+        concurrency:
+            group: release-${{ needs.version.outputs.tag }}
+            cancel-in-progress: false
+        env:
+            TAG: ${{ needs.version.outputs.tag }}
         permissions:
             contents: write
             id-token: write
@@ -39,12 +64,20 @@ jobs:
               run: yarn install --frozen-lockfile
 
             - name: Prepare release notes
-              run: node scripts/release-notes.mjs "$GITHUB_REF_NAME" "$RUNNER_TEMP/release-notes.md"
+              run: node scripts/release-notes.mjs "$TAG" "$RUNNER_TEMP/release-notes.md"
 
             - name: Publish npm package
               run: |
+                  # npm 发布成功后若创建 Release 失败，重跑时继续完成同一提交的发布。
+                  metadata="$RUNNER_TEMP/npm-version.json"
+                  status=$(curl -sS --retry 3 -o "$metadata" -w '%{http_code}' "https://registry.npmjs.org/qzone-sdk/${TAG#v}")
+                  case "$status" in
+                      200) jq -e --arg sha "$GITHUB_SHA" '.gitHead == $sha' "$metadata"; exit ;;
+                      404) ;;
+                      *) echo "查询 npm 版本失败：HTTP $status" >&2; exit 1 ;;
+                  esac
                   dist_tag=latest
-                  if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+                  if [[ "$TAG" == *-* ]]; then
                       dist_tag=next
                   fi
                   npm publish --access public --tag "$dist_tag"
@@ -53,12 +86,13 @@ jobs:
               env:
                   GH_TOKEN: ${{ github.token }}
               run: |
+                  if gh release view "$TAG" >/dev/null 2>&1; then exit 0; fi
                   args=()
-                  if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+                  if [[ "$TAG" == *-* ]]; then
                       args+=(--prerelease)
                   fi
-                  gh release create "$GITHUB_REF_NAME" \
-                      --verify-tag \
-                      --title "$GITHUB_REF_NAME" \
+                  gh release create "$TAG" \
+                      --target "$GITHUB_SHA" \
+                      --title "$TAG" \
                       --notes-file "$RUNNER_TEMP/release-notes.md" \
                       "${args[@]}"
